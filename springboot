@@ -18,9 +18,15 @@
 #   springboot deps list --boot=3.5.14 --output=terminal
 #   springboot deps preview --type=gradle --deps=web,data-jpa --boot=3.5.14
 
-# 定位脚本所在目录（全局命令场景下也能正确找到 lib/ 子脚本）
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCRIPT_VERSION="0.3.0"
+# 定位脚本真实所在目录（兼容符号链接调用，例如 /usr/local/bin/springboot）。
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+    SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+    SOURCE="$(readlink "$SOURCE")"
+    [[ "$SOURCE" != /* ]] && SOURCE="$SCRIPT_DIR/$SOURCE"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+SCRIPT_VERSION="0.4.0"
 source "${SCRIPT_DIR}/lib/arg-common.sh"
 
 # 统一退出码约定：
