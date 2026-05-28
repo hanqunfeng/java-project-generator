@@ -17,6 +17,49 @@ _springboot_cached_deps_zsh() {
   ' "$cache_file"
 }
 
+_springboot_filter_used_opts() {
+  local -a all_opts available
+  local word word_base opt opt_base cur used
+
+  reply=()
+  all_opts=("$@")
+  cur="${words[CURRENT]}"
+
+  for opt in "${all_opts[@]}"; do
+    opt_base="${opt%%=*}"
+    used=0
+    for word in "${words[@]}"; do
+      [[ "$word" == --* ]] || continue
+      word_base="${word%%=*}"
+      if [[ "$word_base" == "$opt_base" && "$word" != "$cur" ]]; then
+        used=1
+        break
+      fi
+    done
+    if (( ! used )); then
+      available+=("$opt")
+    fi
+  done
+
+  reply=("${available[@]}")
+}
+
+_springboot_complete_assignment_values() {
+  local prefix value_prefix value
+  local -a values candidates
+
+  prefix="$1"
+  shift
+  values=("$@")
+  value_prefix="${words[CURRENT]#${prefix}}"
+
+  for value in "${values[@]}"; do
+    [[ "$value" == ${value_prefix}* ]] && candidates+=("${prefix}${value}")
+  done
+
+  compadd -Q -S '' -- "${candidates[@]}"
+}
+
 local curcontext="$curcontext" state line
 typeset -A opt_args
 
@@ -39,9 +82,34 @@ if (( CURRENT == 2 )); then
 fi
 
 local cmd="${words[2]}"
+local create_long_opts module_add_long_opts deps_list_long_opts deps_preview_long_opts
+create_long_opts=(
+  --help --dry-run --name= --boot= --type= --packaging= --modules= --config=
+  --java= --group= --artifact= --artifact-version= --desc= --pkg= --deps=
+)
+module_add_long_opts=(
+  --help --dry-run --name= --module= --module-packaging= --module-path= --boot=
+  --type= --packaging= --config= --java= --group= --artifact= --artifact-version=
+  --desc= --pkg= --deps=
+)
+deps_list_long_opts=(--help --boot= --output=)
+deps_preview_long_opts=(--help --deps= --boot= --type= --java=)
 
 case "$cmd" in
   create)
+    case "${words[CURRENT]}" in
+      --type=*) _springboot_complete_assignment_values "--type=" maven gradle; return ;;
+      --packaging=*) _springboot_complete_assignment_values "--packaging=" jar war pom; return ;;
+      --config=*) _springboot_complete_assignment_values "--config=" properties yaml; return ;;
+      --java=*) _springboot_complete_assignment_values "--java=" 17 21 25; return ;;
+    esac
+    if [[ -z "${words[CURRENT]}" || "${words[CURRENT]}" == --* ]]; then
+      local cur_word
+      cur_word="${words[CURRENT]}"
+      _springboot_filter_used_opts "${create_long_opts[@]}"
+      compadd -Q -S '' -- ${(M)reply:#${cur_word}*}
+      return
+    fi
     _arguments -s \
       '--help[显示 create 命令帮助]' \
       '--dry-run[仅打印执行计划]' \
@@ -61,12 +129,26 @@ case "$cmd" in
     ;;
   module)
     if (( CURRENT == 3 )); then
-      _arguments '1:subcommand:(add)'
+      _arguments '2:subcommand:(add)'
       return
     fi
     local module_sub="${words[3]}"
     case "$module_sub" in
       add)
+        case "${words[CURRENT]}" in
+          --type=*) _springboot_complete_assignment_values "--type=" maven gradle; return ;;
+          --packaging=*) _springboot_complete_assignment_values "--packaging=" pom; return ;;
+          --module-packaging=*) _springboot_complete_assignment_values "--module-packaging=" jar pom; return ;;
+          --config=*) _springboot_complete_assignment_values "--config=" properties yaml; return ;;
+          --java=*) _springboot_complete_assignment_values "--java=" 17 21 25; return ;;
+        esac
+        if [[ -z "${words[CURRENT]}" || "${words[CURRENT]}" == --* ]]; then
+          local cur_word
+          cur_word="${words[CURRENT]}"
+          _springboot_filter_used_opts "${module_add_long_opts[@]}"
+          compadd -Q -S '' -- ${(M)reply:#${cur_word}*}
+          return
+        fi
         _arguments -s \
           '--help[显示 module add 命令帮助]' \
           '--dry-run[仅打印执行计划]' \
@@ -87,24 +169,45 @@ case "$cmd" in
           '--deps=[依赖 ID 列表，逗号分隔]:deps:'
         ;;
       *)
-        _arguments '1:subcommand:(add)'
+        _arguments '2:subcommand:(add)'
         ;;
     esac
     ;;
   deps)
     if (( CURRENT == 3 )); then
-      _arguments '1:subcommand:(list preview)'
+      _arguments '2:subcommand:(list preview)'
       return
     fi
     local deps_sub="${words[3]}"
     case "$deps_sub" in
       list)
+        case "${words[CURRENT]}" in
+          --output=*) _springboot_complete_assignment_values "--output=" terminal web; return ;;
+        esac
+        if [[ -z "${words[CURRENT]}" || "${words[CURRENT]}" == --* ]]; then
+          local cur_word
+          cur_word="${words[CURRENT]}"
+          _springboot_filter_used_opts "${deps_list_long_opts[@]}"
+          compadd -Q -S '' -- ${(M)reply:#${cur_word}*}
+          return
+        fi
         _arguments -s \
           '--help[显示 deps list 命令帮助]' \
           '--boot=[Spring Boot 版本]:boot:' \
           '--output=[输出方式]:output:(terminal web)'
         ;;
       preview)
+        case "${words[CURRENT]}" in
+          --type=*) _springboot_complete_assignment_values "--type=" maven gradle; return ;;
+          --java=*) _springboot_complete_assignment_values "--java=" 17 21 25; return ;;
+        esac
+        if [[ -z "${words[CURRENT]}" || "${words[CURRENT]}" == --* ]]; then
+          local cur_word
+          cur_word="${words[CURRENT]}"
+          _springboot_filter_used_opts "${deps_preview_long_opts[@]}"
+          compadd -Q -S '' -- ${(M)reply:#${cur_word}*}
+          return
+        fi
         _arguments -s \
           '--help[显示 deps preview 命令帮助]' \
           '--deps=[依赖 ID 列表，逗号分隔]:deps:' \
@@ -113,7 +216,7 @@ case "$cmd" in
           '--java=[Java 版本]:java:(17 21 25)'
         ;;
       *)
-        _arguments '1:subcommand:(list preview)'
+        _arguments '2:subcommand:(list preview)'
         ;;
     esac
     ;;
