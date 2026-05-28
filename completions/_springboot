@@ -1,0 +1,126 @@
+#compdef springboot
+
+# Zsh completion：子命令与子命令参数补全。
+_springboot_cached_deps_zsh() {
+  local script_dir cache_file
+  script_dir="${${(%):-%N}:A:h:h}"
+  cache_file=(${script_dir}/deps-cache/boot-*.md(N[1]))
+  [[ -z "$cache_file" ]] && return 0
+  awk -F'|' '
+    /^\|/ {
+      id=$3
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", id)
+      if (id != "" && id != "ID" && id != "---") {
+        print id
+      }
+    }
+  ' "$cache_file"
+}
+
+local curcontext="$curcontext" state line
+typeset -A opt_args
+
+if [[ "${words[CURRENT]}" == --deps=* ]]; then
+  local dep_values dep_prefix
+  dep_prefix="${words[CURRENT]#--deps=}"
+  dep_values=("${(@f)$(_springboot_cached_deps_zsh)}")
+  if (( ${#dep_values[@]} > 0 )); then
+    compadd -Q -S '' -- ${(M)dep_values:#${dep_prefix}*}
+  fi
+  return
+fi
+
+if (( CURRENT == 2 )); then
+  _arguments \
+    '--help[显示帮助信息]' \
+    '--version[显示脚本版本]' \
+    '1:command:(create module deps)'
+  return
+fi
+
+local cmd="${words[2]}"
+
+case "$cmd" in
+  create)
+    _arguments -s \
+      '--help[显示 create 命令帮助]' \
+      '--dry-run[仅打印执行计划]' \
+      '--name=[项目名]:name:' \
+      '--boot=[Spring Boot 版本]:boot:' \
+      '--type=[构建工具]:type:(maven gradle)' \
+      '--packaging=[打包方式]:packaging:(jar war pom)' \
+      '--modules=[子模块列表，逗号分隔]:modules:' \
+      '--config=[配置文件格式]:config:(properties yaml)' \
+      '--java=[Java 版本]:java:(17 21 25)' \
+      '--group=[Group Id]:group:' \
+      '--artifact=[Artifact Id]:artifact:' \
+      '--artifact-version=[项目版本]:artifact-version:' \
+      '--desc=[项目描述]:desc:' \
+      "--pkg=[根包名（默认同 --group，自动把 '-' 转 '_'）]:pkg:" \
+      '--deps=[依赖 ID 列表，逗号分隔]:deps:'
+    ;;
+  module)
+    if (( CURRENT == 3 )); then
+      _arguments '1:subcommand:(add)'
+      return
+    fi
+    local module_sub="${words[3]}"
+    case "$module_sub" in
+      add)
+        _arguments -s \
+          '--help[显示 module add 命令帮助]' \
+          '--dry-run[仅打印执行计划]' \
+          '--name=[目标项目名]:name:' \
+          '--module=[新增子模块名]:module:' \
+          '--module-packaging=[子模块打包方式]:module-packaging:(jar pom)' \
+          '--module-path=[父模块路径]:module-path:' \
+          '--boot=[Spring Boot 版本]:boot:' \
+          '--type=[构建工具]:type:(maven gradle)' \
+          '--packaging=[打包方式，仅支持 pom]:packaging:(pom)' \
+          '--config=[配置文件格式]:config:(properties yaml)' \
+          '--java=[Java 版本]:java:(17 21 25)' \
+          '--group=[Group Id]:group:' \
+          '--artifact=[Artifact Id]:artifact:' \
+          '--artifact-version=[项目版本]:artifact-version:' \
+          '--desc=[项目描述]:desc:' \
+          "--pkg=[根包名（默认同 --group，自动把 '-' 转 '_'）]:pkg:" \
+          '--deps=[依赖 ID 列表，逗号分隔]:deps:'
+        ;;
+      *)
+        _arguments '1:subcommand:(add)'
+        ;;
+    esac
+    ;;
+  deps)
+    if (( CURRENT == 3 )); then
+      _arguments '1:subcommand:(list preview)'
+      return
+    fi
+    local deps_sub="${words[3]}"
+    case "$deps_sub" in
+      list)
+        _arguments -s \
+          '--help[显示 deps list 命令帮助]' \
+          '--boot=[Spring Boot 版本]:boot:' \
+          '--output=[输出方式]:output:(terminal web)'
+        ;;
+      preview)
+        _arguments -s \
+          '--help[显示 deps preview 命令帮助]' \
+          '--deps=[依赖 ID 列表，逗号分隔]:deps:' \
+          '--boot=[Spring Boot 版本]:boot:' \
+          '--type=[构建工具]:type:(maven gradle)' \
+          '--java=[Java 版本]:java:(17 21 25)'
+        ;;
+      *)
+        _arguments '1:subcommand:(list preview)'
+        ;;
+    esac
+    ;;
+  *)
+    _arguments \
+      '--help[显示帮助信息]' \
+      '--version[显示脚本版本]' \
+      '1:command:(create module deps)'
+    ;;
+esac
