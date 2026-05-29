@@ -47,9 +47,6 @@ class JavaProjectGenerator < Formula
   sha256 "b81d5cc3902fbf6b7a5cf0386ca406ee7404f040937240d9e4607515229e1209"
   license "MIT"
 
-  depends_on "bash"
-  depends_on "curl"
-  depends_on "unzip"
   depends_on "glow"
   depends_on "pandoc"
 
@@ -87,9 +84,6 @@ end
 
 | 依赖 | 用途 |
 | --- | --- |
-| `bash` | 多模块模板等脚本能力（需 Bash 4+，macOS 自带 bash 3.2 不足） |
-| `curl` | 访问 Spring Initializr 下载项目与元数据 |
-| `unzip` | 单模块 `create` 解压 `starter.zip` |
 | `glow` | `springboot deps list --output=terminal` |
 | `pandoc` | `springboot deps list --output=web` |
 
@@ -288,6 +282,7 @@ hanqunfeng
     └── README.md
 ```
 
+
 在 Github 中创建用于存储上面的 Homebrew Tap 的远程仓库，比如：
 
 ```bash
@@ -304,6 +299,12 @@ git remote add origin https://github.com/hanqunfeng/homebrew-tap.git
 git push -u origin main
 ```
 
+为了保证 Formula 文件语法准确，在提交代码前可以先进行如下测试，确认没问题再 push。
+
+```bash
+brew style --fix hanqunfeng/tap
+brew audit --tap=hanqunfeng/tap
+```
 
 用户安装方式：
 
