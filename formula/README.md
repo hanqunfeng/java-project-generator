@@ -199,8 +199,8 @@ springboot --version
 推荐创建单独的 Homebrew Tap 仓库，如下命令会自动在 `$(brew --prefix)/Homebrew/Library/Taps/` 下创建 Tap 仓库：
 
 ```bash
-# 注意这里的 tap 仓库名称并不需要与后面的 Github 仓库名称一致，这里实际的 tap 名称为 hanqf/tap
-brew tap-new hanqf/homebrew-tap 
+# 注意这里的 tap 仓库名称必须要与后面的 Github 仓库名称一致，这里实际的 tap 名称为 hanqunfeng/tap
+brew tap-new hanqunfeng/homebrew-tap 
 ```
 
 之后将 `java-project-generator.rb` 拷贝到 `Formula` 目录下
@@ -208,7 +208,7 @@ brew tap-new hanqf/homebrew-tap
 目录结构：
 
 ```text
-hanqf
+hanqunfeng
 └── homebrew-tap
     ├── Formula
     │   └── java-project-generator.rb
@@ -224,9 +224,9 @@ hanqunfeng/homebrew-tap
 绑定远程仓库并提交：
 
 ```bash
-cd $(brew --repo hanqf/homebrew-tap)
+cd $(brew --repo hanqunfeng/homebrew-tap)
 git add .
-git commit -m "java-project-generator v0.3.0"
+git commit -m "java-project-generator v1.0.1"
 git remote add origin https://github.com/hanqunfeng/homebrew-tag.git
 git push -u origin main
 ```
@@ -235,20 +235,20 @@ git push -u origin main
 用户安装方式：
 
 ```bash
-brew tap hanqf/tap
+brew tap hanqunfeng/tap
 brew install java-project-generator
 ```
 
 也可以直接安装：
 
 ```bash
-brew install hanqf/tap/java-project-generator
+brew install hanqunfeng/tap/java-project-generator
 ```
 
 卸载方式：
 
 ```bash
-brew uninstall hanqf/homebrew-tap/java-project-generator
+brew uninstall hanqunfeng/homebrew-tap/java-project-generator
 ```
 
 ## 注意事项
