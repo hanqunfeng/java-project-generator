@@ -227,7 +227,7 @@ hanqunfeng/homebrew-tap
 cd $(brew --repo hanqunfeng/homebrew-tap)
 git add .
 git commit -m "java-project-generator v1.0.1"
-git remote add origin https://github.com/hanqunfeng/homebrew-tag.git
+git remote add origin https://github.com/hanqunfeng/homebrew-tap.git
 git push -u origin main
 ```
 
@@ -235,7 +235,9 @@ git push -u origin main
 用户安装方式：
 
 ```bash
+# 先安装tap
 brew tap hanqunfeng/tap
+# 再安装工具
 brew install java-project-generator
 ```
 
@@ -248,7 +250,13 @@ brew install hanqunfeng/tap/java-project-generator
 卸载方式：
 
 ```bash
-brew uninstall hanqunfeng/homebrew-tap/java-project-generator
+brew uninstall java-project-generator
+```
+
+卸载tap
+
+```bash
+brew untap hanqunfeng/tap
 ```
 
 ## 注意事项
@@ -261,6 +269,6 @@ brew uninstall hanqunfeng/homebrew-tap/java-project-generator
 - 推送到Github时，如果提示缺少权限，需要给仓库添加权限。在 Github 中添加一个 Personal Access Token，并添加权限 `repo` 和 `workflow`，重新推送
 ```bash
 # 设置远程仓库地址，注意替换为你的仓库地址，并且密钥替换为实际的密钥
-git remote set-url origin https://ghp_xxxxx@github.com/hanqunfeng/homebrew-tag.git
+git remote set-url origin https://ghp_xxxxx@github.com/hanqunfeng/homebrew-tap.git
 git push -u origin main
 ```
