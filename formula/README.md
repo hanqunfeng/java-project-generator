@@ -21,33 +21,106 @@ Homebrew formula 是一个 Ruby 文件，用来描述软件如何下载、校验
 
 ## 当前 formula 结构
 
+整体由 **元数据区**、**运行时依赖**、**安装逻辑**、**安装后提示**、**安装后测试** 五部分组成：
+
+```text
+JavaProjectGenerator (Formula 类)
+├── 元数据: desc / homepage / url / sha256 / license
+├── depends_on: bash, curl, unzip, glow, pandoc
+├── install
+│   ├── libexec.install (springboot, lib, completions, assets)
+│   ├── deps-cache 空目录创建
+│   ├── chmod 0755
+│   ├── bin/springboot wrapper
+│   └── bash/zsh 补全安装
+├── caveats (必装 python3 提示 + 可选工具说明)
+└── test (help + dry-run 冒烟测试)
+```
+
+与仓库中 [java-project-generator.rb](java-project-generator.rb) 对应的完整示例：
+
 ```ruby
 class JavaProjectGenerator < Formula
   desc "Generate Spring Boot projects quickly with shell scripts"
   homepage "https://github.com/hanqunfeng/java-project-generator"
-  url "https://github.com/hanqunfeng/java-project-generator/archive/refs/tags/v0.3.0.tar.gz"
-  sha256 "6db7dfa98891f4cadce84c9354a31e49884d6a92626b8799fed4205795badec2"
+  url "https://github.com/hanqunfeng/java-project-generator/archive/refs/tags/v1.0.1.tar.gz"
+  sha256 "b81d5cc3902fbf6b7a5cf0386ca406ee7404f040937240d9e4607515229e1209"
   license "MIT"
 
+  depends_on "bash"
+  depends_on "curl"
+  depends_on "unzip"
+  depends_on "glow"
+  depends_on "pandoc"
+
   def install
-    # install logic
+    libexec.install "springboot"
+    libexec.install "lib"
+    libexec.install "completions"
+    libexec.install "assets"
+    (libexec/"deps-cache").mkpath
+    # chmod、bin wrapper、补全安装 ...
+  end
+
+  def caveats
+    # python3 必装说明 + 可选 jq/xmllint/xmlstarlet/mvn
   end
 
   test do
-    # smoke test
+    # --help 与 create --dry-run
   end
 end
 ```
 
-字段说明：
+### 元数据字段
 
-- `desc`：简短描述，会显示在 `brew info` 中
-- `homepage`：项目主页
-- `url`：源码压缩包地址，通常指向 GitHub tag
-- `sha256`：源码压缩包校验值，确保下载内容未被篡改
-- `license`：项目许可证
-- `install`：安装逻辑
-- `test`：安装后测试逻辑
+| 字段 | 说明 |
+| --- | --- |
+| `class JavaProjectGenerator < Formula` | Formula 类名，与 Tap 中包名 `java-project-generator` 对应（驼峰命名） |
+| `desc` | 一句话描述，`brew info java-project-generator` 会展示 |
+| `homepage` | 项目主页 URL |
+| `url` | 源码压缩包下载地址，通常指向 GitHub tag 的 `.tar.gz` |
+| `sha256` | 与 `url` 对应压缩包的 SHA256，防止下载内容被篡改；**每次改 `url` 必须重算** |
+| `license` | 开源许可证标识（本项目为 `MIT`） |
+
+### `depends_on`（formula 自动安装的依赖）
+
+| 依赖 | 用途 |
+| --- | --- |
+| `bash` | 多模块模板等脚本能力（需 Bash 4+，macOS 自带 bash 3.2 不足） |
+| `curl` | 访问 Spring Initializr 下载项目与元数据 |
+| `unzip` | 单模块 `create` 解压 `starter.zip` |
+| `glow` | `springboot deps list --output=terminal` |
+| `pandoc` | `springboot deps list --output=web` |
+
+未写入 `depends_on`、但在 `caveats` 或文档中说明的依赖见下文「运行时依赖」一节（如 **python3 必装**、jq、xmllint 等）。
+
+### `install` 安装逻辑说明
+
+| 步骤 | 代码要点 | 作用 |
+| --- | --- | --- |
+| 安装到 `libexec` | `libexec.install "springboot"` 等 | 保留完整目录结构，供运行时 `source lib/*.sh` |
+| 创建缓存目录 | `(libexec/"deps-cache").mkpath` | 运行时写入依赖列表缓存，不打包仓库内已有缓存 |
+| 可执行权限 | `chmod 0755` | 保证 `springboot` 与 `lib/*.sh` 可直接执行 |
+| 命令入口 | `(bin/"springboot").write` + `exec libexec/...` | 在 PATH 中提供 `springboot`，且能正确定位 `SCRIPT_DIR` |
+| Shell 补全 | `bash_completion.install` / `zsh_completion.install` | 安装 Bash、Zsh 补全脚本 |
+
+### `caveats` 安装后提示
+
+`brew install` 结束后，`brew info` 会显示该段文字，用于补充 **formula 未自动安装** 的要求：
+
+- **python3（必装）**：需用户自行 `brew install python@3.13`，用于依赖元数据解析与 `--deps` 校验
+- **可选**：`jq`、`libxml2`（xmllint）、`xmlstarlet`、`maven`（mvn）
+- **网络**：需能访问 Spring Initializr（可用 `INITIALIZR_BASE_URL` 覆盖镜像）
+
+### `test` 安装后测试
+
+| 断言 | 目的 |
+| --- | --- |
+| `springboot --help` | 验证命令可执行、包装脚本与 `libexec` 路径正常 |
+| `springboot create --name=brewtest --dry-run` | 验证参数解析与多模块调度链路（不联网、不落盘） |
+
+测试在隔离环境中运行，**不会**拉取 Initializr，因此不要求测试时已安装 python3；用户实际使用 `create` / `deps` 前仍需按 caveats 安装 python3。
 
 ## 为什么使用 `libexec`
 
@@ -258,6 +331,35 @@ brew uninstall java-project-generator
 ```bash
 brew untap hanqunfeng/tap
 ```
+
+## 运行时依赖
+
+通过 `brew install java-project-generator` 时，formula 会自动安装以下工具：
+
+| 工具 | 用途 |
+| --- | --- |
+| bash | 多模块模板生成（需 Bash 4+） |
+| curl | 从 Spring Initializr 下载项目与元数据 |
+| unzip | 单模块 jar/war 解压 starter.zip |
+| glow | `springboot deps list --output=terminal` |
+| pandoc | `springboot deps list --output=web` |
+
+**必须自行安装**（formula 不会安装，使用前请先装好）：
+
+| 工具 | 安装方式 | 用途 |
+| --- | --- | --- |
+| python3 | `brew install python@3.13` | 依赖列表缓存、`--deps` 校验、Initializr 元数据解析（**必需**） |
+
+安装后 `brew info java-project-generator` 的 **Caveats** 中会再次强调 python3 为必装项。
+
+**可选依赖**（Caveats 中说明，按需安装）：
+
+| 工具 | 安装方式 | 用途 |
+| --- | --- | --- |
+| jq | `brew install jq` | 可选 JSON 工具 |
+| xmllint | `brew install libxml2` | Maven `module add` 解析父 pom |
+| xmlstarlet | `brew install xmlstarlet` | 同上，第二回退 |
+| mvn | `brew install maven` | Maven `module add` 时更准确的坐标解析（脚本有 awk 兜底） |
 
 ## 注意事项
 

@@ -5,6 +5,12 @@ class JavaProjectGenerator < Formula
   sha256 "b81d5cc3902fbf6b7a5cf0386ca406ee7404f040937240d9e4607515229e1209"
   license "MIT"
 
+  depends_on "bash"
+  depends_on "curl"
+  depends_on "unzip"
+  depends_on "glow"
+  depends_on "pandoc"
+
   def install
     libexec.install "springboot"
     libexec.install "lib"
@@ -25,7 +31,26 @@ class JavaProjectGenerator < Formula
     zsh_completion.install libexec/"completions/_springboot"
   end
 
+  def caveats
+    <<~EOS
+      python3 is required but NOT installed by this formula. Install before use:
+        brew install python@3.13
+      Needed for: deps list cache, --deps validation, and other Initializr metadata parsing.
+
+      Optional tools (not installed by this formula):
+        - jq:                 brew install jq
+        - libxml2 (xmllint):  brew install libxml2
+        - xmlstarlet:         brew install xmlstarlet
+        - mvn:                brew install maven
+      xmllint / xmlstarlet / mvn: only for Maven "module add" parent POM parsing (awk fallback still works).
+
+      Network access to Spring Initializr is required (default: https://start.spring.io).
+      Override with: export INITIALIZR_BASE_URL=<mirror-url>
+    EOS
+  end
+
   test do
     assert_match "springboot <command>", shell_output("#{bin}/springboot --help")
+    assert_match "Dry-run 模式", shell_output("#{bin}/springboot create --name=brewtest --dry-run")
   end
 end
