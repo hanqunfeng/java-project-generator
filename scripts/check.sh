@@ -32,6 +32,7 @@ export LC_ALL=C
 export LANG=C
 
 bats test/springboot.bats
+bats test/deps.bats
 
 if [[ "${RUN_INTEGRATION_TESTS:-0}" == "1" ]]; then
     bats test/integration.bats

@@ -22,10 +22,10 @@ springboot <TAB>
 
 ```bash
 springboot module <TAB>
-# add
+# add list remove
 
 springboot deps <TAB>
-# list preview
+# list preview search
 ```
 
 ### 参数名补全
@@ -36,10 +36,35 @@ springboot deps <TAB>
 springboot create --<TAB>
 springboot create --na<TAB>
 springboot module add --<TAB>
+springboot module list --<TAB>
+springboot module remove --<TAB>
 springboot deps list --<TAB>
+springboot deps preview --<TAB>
+springboot deps search --<TAB>
 ```
 
 Zsh 补全会过滤已经使用过的长参数。例如已经输入 `--name=demo` 后，再补全参数时不会继续提示 `--name=`。
+
+### 按子命令的参数补全
+
+**`module list`**
+
+- `--help` `--name=` `--type=` `--module-path=`
+- `--type=` 候选：`maven` `gradle`
+
+**`module remove`**
+
+- `--help` `--dry-run` `--name=` `--type=` `--module=` `--module-path=`
+- `--type=` 候选：`maven` `gradle`
+
+**`deps list`**
+
+- `--help` `--boot=` `--output=` `--refresh`
+- `--output=` 候选：`terminal` `web`
+
+**`deps search`**
+
+- `--help` `--query=` `--boot=` `--refresh`
 
 ### 固定取值补全
 
@@ -67,7 +92,7 @@ springboot deps list --output=<TAB>
 
 ### 依赖 ID 动态补全
 
-`--deps=` 支持从本地依赖缓存中读取 Spring Initializr 依赖 ID 候选。
+`--deps=` 支持从本地依赖缓存中读取 Spring Initializr 依赖 ID 候选，在 `create`、`module add`、`deps preview` 等带 `--deps=` 的命令下均可用。
 
 首次使用前建议先生成缓存：
 
@@ -79,15 +104,18 @@ springboot deps list --boot=3.5.14
 
 ```bash
 springboot create --deps=<TAB>
+springboot module add --deps=<TAB>
 springboot deps preview --deps=<TAB>
 ```
 
 ## 手动启用
 
+`$REPO_ROOT` 表示仓库根目录，约定与根 [README.md](../README.md) 中「安装与全局命令配置」一致。
+
 ### Bash
 
 ```bash
-source /path/to/java-project-generator/completions/springboot.bash
+source "$REPO_ROOT/completions/springboot.bash"
 ```
 
 如需持久化，可加入 `~/.bashrc`。
@@ -95,7 +123,7 @@ source /path/to/java-project-generator/completions/springboot.bash
 ### Zsh
 
 ```bash
-fpath=(/path/to/java-project-generator/completions $fpath)
+fpath=("$REPO_ROOT/completions" $fpath)
 autoload -Uz compinit && compinit
 ```
 

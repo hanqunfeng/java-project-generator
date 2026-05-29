@@ -23,6 +23,7 @@ java-project-generator/
 │   └── check.sh       # 本地统一检查入口（shellcheck + bats）
 └── lib/
     ├── arg-common.sh  # 参数处理公共逻辑（CSV 规范化/迭代）
+    ├── deps.sh        # 依赖/Initializr 交互（缓存、声明提取、deps 子命令实现）
     ├── single.sh      # 单模块生成逻辑（jar/war）
     ├── multi-maven.sh # Maven 多模块生成逻辑
     ├── multi-gradle.sh # Gradle 多模块生成逻辑
@@ -65,16 +66,22 @@ java-project-generator/
 
 ## 安装与全局命令配置
 
+下文用 `$REPO_ROOT` 表示本仓库根目录（clone 后的 `java-project-generator` 路径）。复制命令前请替换为实际路径，例如：
+
+```bash
+export REPO_ROOT="$(cd /path/to/java-project-generator && pwd)"
+```
+
 在当前目录执行：
 
 ```bash
-chmod +x springboot scripts/check.sh lib/single.sh lib/multi-maven.sh lib/multi-gradle.sh lib/nested-common.sh lib/module-template-common.sh lib/project-common.sh lib/arg-common.sh
+chmod +x springboot scripts/check.sh lib/single.sh lib/multi-maven.sh lib/multi-gradle.sh lib/nested-common.sh lib/module-template-common.sh lib/project-common.sh lib/arg-common.sh lib/deps.sh
 ```
 
 将目录加入 PATH（`zsh` 示例）：
 
 ```bash
-echo 'export PATH="/Users/hanqf/myservice_dir/java-project-generator:$PATH"' >> ~/.zshrc
+echo 'export PATH="'"$REPO_ROOT"':$PATH"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
@@ -89,7 +96,7 @@ springboot create --name=mydemo
 ### Bash
 
 ```bash
-source /Users/hanqf/myservice_dir/java-project-generator/completions/springboot.bash
+source "$REPO_ROOT/completions/springboot.bash"
 ```
 
 如需持久化，可追加到 `~/.bashrc`。
@@ -103,7 +110,7 @@ springboot deps list --boot=3.5.14
 ### Zsh
 
 ```bash
-fpath=(/Users/hanqf/myservice_dir/java-project-generator/completions $fpath)
+fpath=("$REPO_ROOT/completions" $fpath)
 autoload -Uz compinit && compinit
 ```
 
@@ -334,8 +341,8 @@ springboot deps search --query=redis --boot=3.5.14
 
 ### 多模块 Gradle（`--packaging=pom --type=gradle`）
 
-- 生成根 `settings.gradle` 与根 `build.gradle`
-- 可按 `--modules` 自动生成各子模块目录和子模块 `build.gradle`
+- 生成根 `settings.gradle` 与根 `build.gradle`（`--gradle-dsl=kotlin` 时为 `settings.gradle.kts` 与 `build.gradle.kts`）
+- 可按 `--modules` 自动生成各子模块目录和子模块 `build.gradle`（Kotlin DSL 时为 `build.gradle.kts`）
 - `jar` 子模块依赖由 `--deps` 控制（默认 `web,devtools`）
 - 每个子模块默认包含：
   - `src/main/java/...`
@@ -388,6 +395,7 @@ springboot deps search --query=redis --boot=3.5.14
 
 - 嵌套模块相关公共逻辑集中在 `lib/nested-common.sh`（路径解析、存在性校验、Gradle include 路径生成）
 - 参数规范化与 CSV 迭代逻辑集中在 `lib/arg-common.sh`（供入口脚本与多模块脚本复用）
+- 依赖/Initializr 交互逻辑集中在 `lib/deps.sh`（缓存、Boot 参数探测、声明提取、deps 子命令实现）
 - 模块目录骨架创建公共逻辑集中在 `lib/module-template-common.sh`（`jar` 与聚合模块基础结构、类名/模板写入、dry-run 计划片段）
 - 项目级公共逻辑集中在 `lib/project-common.sh`（统一 `.gitignore` 写入）
 - Maven/Gradle 各自脚本仅保留构建工具差异化内容（POM/Gradle 文件模板与父配置更新）
@@ -432,7 +440,6 @@ bats test/springboot.bats
 
 CI 工作流：`.github/workflows/ci.yml`（shellcheck + bats）
 
-## 后续扩展建议
+## 后续扩展（规划中）
 
-- 支持 Gradle Kotlin DSL（`build.gradle.kts`）
-- 提供离线依赖镜像模式（缓存元数据与模板片段）
+- 提供离线依赖镜像模式（缓存元数据与模板片段；当前可通过 `INITIALIZR_BASE_URL` 指向镜像站点）
