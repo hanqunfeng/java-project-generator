@@ -12,9 +12,6 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-    env:
-      LANG: en_US.UTF-8
-      LC_ALL: en_US.UTF-8
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -24,7 +21,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y shellcheck bats ripgrep
-          sudo locale-gen en_US.UTF-8
 
       - name: Install dependencies (macOS)
         if: startsWith(matrix.os, 'macos')
