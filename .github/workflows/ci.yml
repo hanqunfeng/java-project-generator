@@ -8,15 +8,24 @@ on:
 
 jobs:
   shell-and-tests:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install dependencies (Ubuntu)
+        if: startsWith(matrix.os, 'ubuntu')
         run: |
           sudo apt-get update
           sudo apt-get install -y shellcheck bats ripgrep
 
+      - name: Install dependencies (macOS)
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          brew install shellcheck bats-core ripgrep
+
       - name: Run checks
-        run: bash scripts/check.sh
+        run: RUN_INTEGRATION_TESTS=1 bash scripts/check.sh

@@ -28,12 +28,15 @@ _springboot_completion() {
     subcmd="${COMP_WORDS[2]}"
 
     local root_opts="--help --version create module deps"
-    local create_opts="--help --dry-run --name= --boot= --type= --packaging= --modules= --config= --java= --group= --artifact= --artifact-version= --desc= --pkg= --deps="
-    local module_opts="--help add"
-    local module_add_opts="--help --dry-run --name= --module= --module-packaging= --module-path= --boot= --type= --packaging= --config= --java= --group= --artifact= --artifact-version= --desc= --pkg= --deps="
-    local deps_opts="--help list preview"
-    local deps_list_opts="--help --boot= --output="
-    local deps_preview_opts="--help --deps= --boot= --type= --java="
+    local create_opts="--help --dry-run --name= --boot= --type= --packaging= --modules= --config= --java= --language= --gradle-dsl= --group= --artifact= --artifact-version= --desc= --pkg= --deps="
+    local module_opts="--help add list remove"
+    local module_add_opts="--help --dry-run --name= --module= --module-packaging= --module-path= --boot= --type= --packaging= --config= --java= --language= --gradle-dsl= --group= --artifact= --artifact-version= --desc= --pkg= --deps="
+    local module_list_opts="--help --name= --type= --module-path="
+    local module_remove_opts="--help --dry-run --name= --type= --module= --module-path="
+    local deps_opts="--help list preview search"
+    local deps_list_opts="--help --boot= --output= --refresh"
+    local deps_preview_opts="--help --deps= --boot= --type= --java= --language= --gradle-dsl="
+    local deps_search_opts="--help --query= --boot= --refresh"
 
     if [[ $COMP_CWORD -le 1 ]]; then
         COMPREPLY=( $(compgen -W "$root_opts" -- "$cur") )
@@ -65,6 +68,16 @@ _springboot_completion() {
             COMPREPLY=( "${COMPREPLY[@]/#/--type=}" )
             return 0
             ;;
+        --language=*)
+            COMPREPLY=( $(compgen -W "java kotlin groovy" -- "${cur#--language=}") )
+            COMPREPLY=( "${COMPREPLY[@]/#/--language=}" )
+            return 0
+            ;;
+        --gradle-dsl=*)
+            COMPREPLY=( $(compgen -W "groovy kotlin" -- "${cur#--gradle-dsl=}") )
+            COMPREPLY=( "${COMPREPLY[@]/#/--gradle-dsl=}" )
+            return 0
+            ;;
         --packaging=*)
             COMPREPLY=( $(compgen -W "jar war pom" -- "${cur#--packaging=}") )
             COMPREPLY=( "${COMPREPLY[@]/#/--packaging=}" )
@@ -91,6 +104,10 @@ _springboot_completion() {
                 COMPREPLY=( $(compgen -W "$module_opts" -- "$cur") )
             elif [[ "$subcmd" == "add" ]]; then
                 COMPREPLY=( $(compgen -W "$module_add_opts" -- "$cur") )
+            elif [[ "$subcmd" == "list" ]]; then
+                COMPREPLY=( $(compgen -W "$module_list_opts" -- "$cur") )
+            elif [[ "$subcmd" == "remove" ]]; then
+                COMPREPLY=( $(compgen -W "$module_remove_opts" -- "$cur") )
             else
                 COMPREPLY=( $(compgen -W "$module_opts" -- "$cur") )
             fi
@@ -102,6 +119,8 @@ _springboot_completion() {
                 COMPREPLY=( $(compgen -W "$deps_list_opts" -- "$cur") )
             elif [[ "$subcmd" == "preview" ]]; then
                 COMPREPLY=( $(compgen -W "$deps_preview_opts" -- "$cur") )
+            elif [[ "$subcmd" == "search" ]]; then
+                COMPREPLY=( $(compgen -W "$deps_search_opts" -- "$cur") )
             else
                 COMPREPLY=( $(compgen -W "$deps_opts" -- "$cur") )
             fi

@@ -34,6 +34,7 @@ java-project-generator/
 ## 工作原理
 
 - `springboot` 负责统一解析参数、校验参数、打印配置
+- 支持 `INITIALIZR_BASE_URL` 覆盖默认 `https://start.spring.io`
 - 根据 `--packaging` 调度：
   - `jar` / `war` -> `lib/single.sh`
   - `pom` + `--type=maven` -> `lib/multi-maven.sh`
@@ -49,7 +50,7 @@ java-project-generator/
 - `pandoc`（`springboot deps list --output=web` 渲染 HTML）
 - `glow`（`springboot deps list --output=terminal` 终端渲染，缺失时可直接看缓存文件）
 - `mvn` / `xmllint` / `xmlstarlet`（Maven module add 坐标解析，按回退链任选其一）
-- 网络访问 `https://start.spring.io`（项目创建与 `springboot deps list` 首次拉取需要）
+- 网络访问 Spring Initializr（默认 `https://start.spring.io`，可通过 `INITIALIZR_BASE_URL` 覆盖）
 - 说明：脚本会自动探测 Spring Initializr 接口中 Boot 版本参数名（`bootVersion` / `boot-version`），并分别兼容 `metadata/client` 与 `starter.zip` 请求
 
 ## 兼容矩阵（建议）
@@ -126,9 +127,8 @@ springboot <command> [options]
 
 - 入口命令：
   - `springboot create`：创建项目（单模块或多模块）
-  - `springboot module add`：向已有多模块项目追加子模块
-  - `springboot deps list`：查看依赖列表（`--output=terminal|web`）
-  - `springboot deps preview`：预览依赖声明片段（Maven/Gradle）
+  - `springboot module add|list|remove`：维护多模块项目
+  - `springboot deps list|preview|search`：依赖列表、声明预览与关键词搜索
 - 顶级命令与子命令均支持 `--help` / `-h`
 - `--deps` 仅支持 Spring Boot 官方 Initializr 提供的依赖 ID（如 `web`、`data-jpa`、`mysql`）
 - 可先执行 `springboot deps list --boot=<版本>` 查看当前 Boot 版本可用依赖 ID
@@ -137,6 +137,9 @@ springboot <command> [options]
 ### 环境变量（可选）
 
 - `NO_COLOR`：关闭彩色输出；设置为任意非空值即可（常见用法：`NO_COLOR=1`）
+- `INITIALIZR_BASE_URL`：覆盖 Spring Initializr 基础地址（默认 `https://start.spring.io`）
+- `DEPS_CACHE_TTL_SECONDS`：依赖缓存过期秒数（默认 `86400`）
+- `SPRINGBOOT_LANG`：帮助信息语言（预留，默认中文）
 - `GRADLE_DM_PLUGIN_VERSION`：覆盖 Gradle 多模块模板中的 `io.spring.dependency-management` 插件版本，默认 `1.1.7`
   - 示例：`GRADLE_DM_PLUGIN_VERSION=1.1.6 springboot create --name=myproject --type=gradle --packaging=pom --modules=api`
 - `EXIT_PARAM` / `EXIT_NETWORK` / `EXIT_FS` / `EXIT_DEP`：子脚本在“脱离入口脚本单独执行/调试”时可通过环境变量兜底退出码（入口 `springboot` 正常调用时使用内置退出码）
@@ -231,6 +234,12 @@ springboot deps preview --boot=3.5.14 --deps=web,data-jpa,mysql
 springboot deps preview --type=gradle --boot=3.5.14 --deps=web,data-jpa,mysql
 ```
 
+10.1) 输出 Kotlin DSL 的依赖声明片段：
+
+```bash
+springboot deps preview --type=gradle --gradle-dsl=kotlin --language=kotlin --deps=web,data-jpa
+```
+
 11) 单模块自定义依赖 ID 列表：
 
 ```bash
@@ -289,6 +298,19 @@ springboot module add --name=myproject --type=gradle --module=platform --module-
 
 ```bash
 springboot module add --name=myproject --type=gradle --module-path=platform --module=order-api --module-packaging=jar
+```
+
+21) 列出与删除子模块：
+
+```bash
+springboot module list --name=myproject --type=maven
+springboot module remove --name=myproject --type=gradle --module=order
+```
+
+22) 搜索依赖：
+
+```bash
+springboot deps search --query=redis --boot=3.5.14
 ```
 
 ## 输出结果说明

@@ -6,7 +6,7 @@
 #   dependencies
 #
 # API 参考: https://docs.spring.io/initializr/docs/current/reference/html/#api-guide
-# 或通过 curl https://start.spring.io/metadata/client 查看所有可选参数
+# 或通过 curl ${INITIALIZR_BASE_URL:-https://start.spring.io}/metadata/client 查看所有可选参数
 
 source "${SCRIPT_DIR}/lib/project-common.sh"
 
@@ -17,6 +17,7 @@ exit_network="${EXIT_NETWORK:-2}"
 exit_fs="${EXIT_FS:-3}"
 # starter.zip 的 Boot 参数键由入口探测后注入。
 boot_param_key="${bootParamKeyStarter:-bootVersion}"
+project_language="${projectLanguage:-java}"
 
 # -----------------------------------------------------------------------------
 # 函数: print_single_plan
@@ -24,7 +25,7 @@ boot_param_key="${bootParamKeyStarter:-bootVersion}"
 # -----------------------------------------------------------------------------
 print_single_plan() {
     plan_echo "NETWORK" "准备下载 Spring Initializr 压缩包到 '${zipFile}'"
-    plan_echo "NETWORK" "执行 curl 请求: https://start.spring.io/starter.zip (type=${projectType}-project, ${boot_param_key}=${bootVersion}, packaging=${packaging}, javaVersion=${javaVersion})"
+    plan_echo "NETWORK" "执行 curl 请求: $(initializr_url "starter.zip") (type=${projectType}-project, ${boot_param_key}=${bootVersion}, packaging=${packaging}, javaVersion=${javaVersion}, language=${project_language})"
     plan_echo "NETWORK" "附带元数据参数: groupId=${groupId}, artifactId=${artifactId}, version=${projectVersion}, name=${projectName}, packageName=${packageName}, config=${configFormat}, dependencies=${dependencies}"
     plan_echo "ROLLBACK" "若下载失败: 打印错误并执行回滚 (删除 '${zipFile}' 与可能存在的 '${projectDir}')"
     plan_echo "WRITE" "下载成功后解压 '${zipFile}' 到目录 '${projectDir}'"
@@ -51,9 +52,10 @@ if [[ "${dryRun:-false}" == "true" ]]; then
     return 0
 fi
 
-if ! curl --fail --show-error --location --retry 3 --retry-delay 1 --no-progress-meter https://start.spring.io/starter.zip \
+if ! curl --fail --show-error --location --retry 3 --retry-delay 1 --no-progress-meter "$(initializr_url "starter.zip")" \
     -d type="${projectType}-project" \
     -d "${boot_param_key}=${bootVersion}" \
+    -d language="${project_language}" \
     -d packaging="${packaging}" \
     -d javaVersion="${javaVersion}" \
     -d groupId="${groupId}" \

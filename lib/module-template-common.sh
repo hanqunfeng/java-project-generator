@@ -61,6 +61,7 @@ write_module_application_files() {
     local className
     local basePath
     local testClassName
+    local sourceLanguage="${projectLanguage:-java}"
 
     if [ -z "$packageNameArg" ]; then
         echo "write_module_application_files 需要 packageName 参数"
@@ -71,8 +72,67 @@ write_module_application_files() {
     packageDecl="${packageNameArg}.$(printf '%s' "$mod" | tr '-' '_')"
     className="$(module_class_name "$mod")"
     testClassName="${className}Tests"
-    basePath="${modDir}/src/main/java/${packagePath}"
-    mkdir -p "$basePath" "${modDir}/src/test/java/${packagePath}"
+    basePath="${modDir}/src/main/${sourceLanguage}/${packagePath}"
+    mkdir -p "$basePath" "${modDir}/src/test/${sourceLanguage}/${packagePath}"
+
+    if [[ "$sourceLanguage" == "kotlin" ]]; then
+        cat > "${basePath}/${className}.kt" <<EOF
+package ${packageDecl}
+
+import org.springframework.boot.autoconfigure.SpringBootApplication
+import org.springframework.boot.runApplication
+
+@SpringBootApplication
+class ${className}
+
+fun main(args: Array<String>) {
+    runApplication<${className}>(*args)
+}
+EOF
+        cat > "${modDir}/src/test/${sourceLanguage}/${packagePath}/${testClassName}.kt" <<EOF
+package ${packageDecl}
+
+import org.junit.jupiter.api.Test
+import org.springframework.boot.test.context.SpringBootTest
+
+@SpringBootTest
+class ${testClassName} {
+    @Test
+    fun contextLoads() {}
+}
+EOF
+        return 0
+    fi
+
+    if [[ "$sourceLanguage" == "groovy" ]]; then
+        cat > "${basePath}/${className}.groovy" <<EOF
+package ${packageDecl}
+
+import org.springframework.boot.SpringApplication
+import org.springframework.boot.autoconfigure.SpringBootApplication
+
+@SpringBootApplication
+class ${className} {
+    static void main(String[] args) {
+        SpringApplication.run(${className}, args)
+    }
+}
+EOF
+        cat > "${modDir}/src/test/${sourceLanguage}/${packagePath}/${testClassName}.groovy" <<EOF
+package ${packageDecl}
+
+import org.junit.jupiter.api.Test
+import org.springframework.boot.test.context.SpringBootTest
+
+@SpringBootTest
+class ${testClassName} {
+    @Test
+    void contextLoads() {
+    }
+}
+EOF
+        return 0
+    fi
 
     cat > "${basePath}/${className}.java" <<EOF
 package ${packageDecl};
@@ -88,7 +148,7 @@ public class ${className} {
 }
 EOF
 
-    cat > "${modDir}/src/test/java/${packagePath}/${testClassName}.java" <<EOF
+    cat > "${modDir}/src/test/${sourceLanguage}/${packagePath}/${testClassName}.java" <<EOF
 package ${packageDecl};
 
 import org.junit.jupiter.api.Test;
@@ -123,6 +183,7 @@ create_module_scaffold_common() {
     local mod="$3"
     local configFormat="$4"
     local modulePackaging="$5"
+    local sourceLanguage="${6:-${projectLanguage:-java}}"
     local subpath
 
     if [[ "$modulePackaging" != "jar" ]]; then
@@ -131,9 +192,9 @@ create_module_scaffold_common() {
     fi
 
     subpath="$(build_package_subpath_common "${packageName}" "${mod}")"
-    mkdir -p "${modDir}/src/main/java/${subpath}"
+    mkdir -p "${modDir}/src/main/${sourceLanguage}/${subpath}"
     mkdir -p "${modDir}/src/main/resources"
-    mkdir -p "${modDir}/src/test/java/${subpath}"
+    mkdir -p "${modDir}/src/test/${sourceLanguage}/${subpath}"
 
     # 生成最小默认配置，避免产物为空文件。
     if [[ "$configFormat" == "yaml" ]]; then
@@ -162,10 +223,11 @@ print_jar_module_scaffold_plan_common() {
     local packageSubpath
 
     packageSubpath="$(build_package_subpath_common "${packageNameArg}" "${mod}")"
-    plan_echo "WRITE" "创建子模块目录结构: '${modDir}/src/main/java/${packageSubpath}'"
+    local sourceLanguage="${projectLanguage:-java}"
+    plan_echo "WRITE" "创建子模块目录结构: '${modDir}/src/main/${sourceLanguage}/${packageSubpath}'"
     plan_echo "WRITE" "创建子模块目录结构: '${modDir}/src/main/resources'"
-    plan_echo "WRITE" "创建子模块目录结构: '${modDir}/src/test/java/${packageSubpath}'"
-    plan_echo "WRITE" "生成 Spring Boot 启动类与测试类: '${modDir}/src/main/java/.../*Application.java' 和 '${modDir}/src/test/java/.../*ApplicationTests.java'"
+    plan_echo "WRITE" "创建子模块目录结构: '${modDir}/src/test/${sourceLanguage}/${packageSubpath}'"
+    plan_echo "WRITE" "生成 Spring Boot 启动类与测试类: '${modDir}/src/main/${sourceLanguage}/.../*Application.*' 和 '${modDir}/src/test/${sourceLanguage}/.../*ApplicationTests.*'"
     if [[ "$configFormatArg" == "yaml" ]]; then
         plan_echo "WRITE" "创建配置文件: '${modDir}/src/main/resources/application.yaml' (if configFormat=yaml)"
     else

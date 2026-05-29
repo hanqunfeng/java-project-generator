@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -o pipefail
 # ========= 脚本说明 =========
 # 本脚本用于快速生成一个新的 Spring Boot 项目（单模块或多模块）。
 # 用法:
@@ -28,6 +29,11 @@ done
 SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 SCRIPT_VERSION="1.0.1"
 source "${SCRIPT_DIR}/lib/arg-common.sh"
+
+DEFAULT_DEPS="web,devtools"
+INITIALIZR_BASE_URL="${INITIALIZR_BASE_URL:-https://start.spring.io}"
+INITIALIZR_BASE_URL="${INITIALIZR_BASE_URL%/}"
+DEPS_CACHE_TTL_SECONDS="${DEPS_CACHE_TTL_SECONDS:-86400}"
 
 # 统一退出码约定：
 # - EXIT_PARAM: 参数不合法、校验失败
@@ -117,6 +123,13 @@ log_warn() { color_print "33" "$*"; }
 log_error() { color_print "31" "$*"; }
 log_success() { color_print "32" "$*"; }
 
+is_english_help() {
+    if [ "${SPRINGBOOT_HELP_LANG:-}" = "en" ]; then
+        return 0
+    fi
+    [[ "${LANG:-}" == en* ]]
+}
+
 # -----------------------------------------------------------------------------
 # 函数: normalize_deps_csv
 # 作用: 规范化依赖 CSV，确保下游校验和请求参数稳定。
@@ -142,6 +155,34 @@ normalize_modules_csv() {
 }
 
 DEP_CACHE_FILE=""
+depsForceRefresh="${depsForceRefresh:-false}"
+
+initializr_url() {
+    local path="$1"
+    printf '%s/%s\n' "$INITIALIZR_BASE_URL" "${path#/}"
+}
+
+file_mtime_epoch() {
+    local path="$1"
+    if stat -f "%m" "$path" >/dev/null 2>&1; then
+        stat -f "%m" "$path"
+        return 0
+    fi
+    if stat -c "%Y" "$path" >/dev/null 2>&1; then
+        stat -c "%Y" "$path"
+        return 0
+    fi
+    return 1
+}
+
+is_cache_file_expired() {
+    local cacheFile="$1"
+    local ttlSeconds="$2"
+    local nowEpoch fileEpoch
+    nowEpoch=$(date +%s)
+    fileEpoch=$(file_mtime_epoch "$cacheFile") || return 0
+    [ $((nowEpoch - fileEpoch)) -ge "$ttlSeconds" ]
+}
 
 # -----------------------------------------------------------------------------
 # 函数: open_browser
@@ -177,32 +218,50 @@ open_browser() {
 # 返回:
 #   0 -> 总能返回可用键（探测失败时回退 bootVersion）
 # -----------------------------------------------------------------------------
-resolve_boot_param_key() {
-    local cacheDir="${SCRIPT_DIR}/deps-cache"
-    local cacheKeyFile="${cacheDir}/boot-param-key.cache"
-    local cachedKey
+resolve_boot_param_key_generic() {
+    local probeKind="$1"
+    local cacheKeyFile="$2"
     local key
+    local cachedKey
+    local cacheDir="${SCRIPT_DIR}/deps-cache"
+    local resolvedKey=""
+    local probeUrl
     local tmpProbe
-    local metadataUrl
-
-    if [ -n "$BOOT_PARAM_KEY" ]; then
-        return 0
-    fi
 
     if [ -s "$cacheKeyFile" ]; then
         cachedKey=$(awk 'NF{print; exit}' "$cacheKeyFile")
         if [ "$cachedKey" = "bootVersion" ] || [ "$cachedKey" = "boot-version" ]; then
-            BOOT_PARAM_KEY="$cachedKey"
+            printf '%s\n' "$cachedKey"
             return 0
         fi
     fi
 
     for key in "bootVersion" "boot-version"; do
+        if [ "$probeKind" = "starter" ]; then
+            if curl --fail --show-error --location --retry 1 --retry-delay 1 --no-progress-meter "$(initializr_url "starter.zip")" \
+                -d type="maven-project" \
+                -d "${key}=${bootVersion}" \
+                -d javaVersion="17" \
+                -d language="java" \
+                -d groupId="com.example" \
+                -d artifactId="probe-boot-param" \
+                -d version="0.0.1" \
+                -d name="probe-boot-param" \
+                -d packageName="com.example.probe" \
+                -d configurationFileFormat="properties" \
+                -d dependencies="web" \
+                -o /dev/null >/dev/null 2>&1; then
+                resolvedKey="$key"
+                break
+            fi
+            continue
+        fi
+
         tmpProbe=$(mktemp)
         register_tmp_file "$tmpProbe"
-        metadataUrl="https://start.spring.io/metadata/client?${key}=${bootVersion}"
-        if curl --fail --show-error --location --retry 1 --retry-delay 1 --no-progress-meter "$metadataUrl" -o "$tmpProbe" >/dev/null 2>&1; then
-            if python3 - "$tmpProbe" <<'PY'
+        probeUrl="$(initializr_url "metadata/client")?${key}=${bootVersion}"
+        if curl --fail --show-error --location --retry 1 --retry-delay 1 --no-progress-meter "$probeUrl" -o "$tmpProbe" >/dev/null 2>&1; then
+            if command -v python3 >/dev/null 2>&1 && python3 - "$tmpProbe" <<'PY'
 import json
 import sys
 try:
@@ -214,16 +273,31 @@ except Exception:
 sys.exit(0 if ok else 1)
 PY
             then
-                BOOT_PARAM_KEY="$key"
-                mkdir -p "$cacheDir" >/dev/null 2>&1 || true
-                printf '%s\n' "$BOOT_PARAM_KEY" > "${cacheDir}/boot-param-key.cache" 2>/dev/null || true
-                return 0
+                resolvedKey="$key"
+                break
+            fi
+            if command -v jq >/dev/null 2>&1 && jq -e '.dependencies.values | length > 0' "$tmpProbe" >/dev/null 2>&1; then
+                resolvedKey="$key"
+                break
             fi
         fi
     done
 
-    log_warn "未探测到可用 Boot 参数名，回退使用默认参数: bootVersion"
-    BOOT_PARAM_KEY="bootVersion"
+    if [ -z "$resolvedKey" ]; then
+        resolvedKey="bootVersion"
+    fi
+    mkdir -p "$cacheDir" >/dev/null 2>&1 || true
+    printf '%s\n' "$resolvedKey" > "$cacheKeyFile" 2>/dev/null || true
+    printf '%s\n' "$resolvedKey"
+}
+
+resolve_boot_param_key() {
+    local cacheKeyFile="${SCRIPT_DIR}/deps-cache/boot-param-key.cache"
+    if [ -n "$BOOT_PARAM_KEY" ]; then
+        return 0
+    fi
+    BOOT_PARAM_KEY="$(resolve_boot_param_key_generic "metadata" "$cacheKeyFile")"
+    [ "$BOOT_PARAM_KEY" = "bootVersion" ] || [ "$BOOT_PARAM_KEY" = "boot-version" ] || BOOT_PARAM_KEY="bootVersion"
 }
 
 # -----------------------------------------------------------------------------
@@ -236,45 +310,13 @@ PY
 #   0 -> 总能返回可用键（探测失败时回退 bootVersion）
 # -----------------------------------------------------------------------------
 resolve_starter_boot_param_key() {
-    local cacheDir="${SCRIPT_DIR}/deps-cache"
-    local cacheKeyFile="${cacheDir}/starter-boot-param-key.cache"
-    local cachedKey
-    local key
-
+    local cacheKeyFile="${SCRIPT_DIR}/deps-cache/starter-boot-param-key.cache"
     if [ -n "$STARTER_BOOT_PARAM_KEY" ]; then
         return 0
     fi
 
-    if [ -s "$cacheKeyFile" ]; then
-        cachedKey=$(awk 'NF{print; exit}' "$cacheKeyFile")
-        if [ "$cachedKey" = "bootVersion" ] || [ "$cachedKey" = "boot-version" ]; then
-            STARTER_BOOT_PARAM_KEY="$cachedKey"
-            return 0
-        fi
-    fi
-
-    for key in "bootVersion" "boot-version"; do
-        if curl --fail --show-error --location --retry 1 --retry-delay 1 --no-progress-meter "https://start.spring.io/starter.zip" \
-            -d type="maven-project" \
-            -d "${key}=${bootVersion}" \
-            -d javaVersion="17" \
-            -d groupId="com.example" \
-            -d artifactId="probe-boot-param" \
-            -d version="0.0.1" \
-            -d name="probe-boot-param" \
-            -d packageName="com.example.probe" \
-            -d configurationFileFormat="properties" \
-            -d dependencies="web" \
-            -o /dev/null >/dev/null 2>&1; then
-            STARTER_BOOT_PARAM_KEY="$key"
-            mkdir -p "$cacheDir" >/dev/null 2>&1 || true
-            printf '%s\n' "$STARTER_BOOT_PARAM_KEY" > "$cacheKeyFile" 2>/dev/null || true
-            return 0
-        fi
-    done
-
-    log_warn "未探测到 starter.zip 可用 Boot 参数名，回退使用默认参数: bootVersion"
-    STARTER_BOOT_PARAM_KEY="bootVersion"
+    STARTER_BOOT_PARAM_KEY="$(resolve_boot_param_key_generic "starter" "$cacheKeyFile")"
+    [ "$STARTER_BOOT_PARAM_KEY" = "bootVersion" ] || [ "$STARTER_BOOT_PARAM_KEY" = "boot-version" ] || STARTER_BOOT_PARAM_KEY="bootVersion"
 }
 
 # -----------------------------------------------------------------------------
@@ -289,7 +331,8 @@ resolve_starter_boot_param_key() {
 # -----------------------------------------------------------------------------
 ensure_dependency_catalog_cache() {
     resolve_boot_param_key
-    local metadataUrl="https://start.spring.io/metadata/client?${BOOT_PARAM_KEY}=${bootVersion}"
+    local metadataUrl
+    metadataUrl="$(initializr_url "metadata/client")?${BOOT_PARAM_KEY}=${bootVersion}"
     local cacheDir="${SCRIPT_DIR}/deps-cache"
     local cacheFile="${cacheDir}/boot-${bootVersion}.md"
     local legacyCacheFile="${cacheDir}/boot-${bootVersion}.txt"
@@ -303,13 +346,13 @@ ensure_dependency_catalog_cache() {
         echo "已迁移旧缓存到 Markdown 文件: ${cacheFile}"
     fi
 
-    if [ -s "$cacheFile" ]; then
+    if [[ "$depsForceRefresh" != "true" && -s "$cacheFile" ]]; then
         firstDataLine=$(awk 'NF{print; exit}' "$cacheFile")
-        if [ "$firstDataLine" = "| Group | ID | Name | Description |" ]; then
+        if [ "$firstDataLine" = "| Group | ID | Name | Description |" ] && ! is_cache_file_expired "$cacheFile" "$DEPS_CACHE_TTL_SECONDS"; then
             DEP_CACHE_FILE="$cacheFile"
             return 0
         fi
-        echo "检测到旧版缓存格式，正在刷新: ${cacheFile}"
+        echo "检测到旧版或过期缓存，正在刷新: ${cacheFile}"
     fi
 
     tmpFile=$(mktemp)
@@ -321,7 +364,7 @@ ensure_dependency_catalog_cache() {
         exit "$EXIT_NETWORK"
     fi
 
-    if ! python3 - "$tmpFile" > "$tmpOutput" <<'PY'
+    if command -v python3 >/dev/null 2>&1 && python3 - "$tmpFile" > "$tmpOutput" <<'PY'
 import json
 import sys
 
@@ -348,7 +391,21 @@ for group in groups:
         print(f"| {group_name} | {dep_id} | {dep_name} | {desc} |")
 PY
     then
-        echo "依赖列表解析失败: 需要可用的 python3 以解析 Initializr 元数据"
+        :
+    elif command -v jq >/dev/null 2>&1 && {
+        {
+            printf '%s\n' "| Group | ID | Name | Description |"
+            printf '%s\n' "| --- | --- | --- | --- |"
+            jq -r '
+            .dependencies.values[]? as $g |
+            $g.values[]? |
+            "| \($g.name // "Other") | \(.id // "") | \(.name // "") | \((.description // "") | gsub("\n"; " ") | gsub("\\|"; "\\\\|")) |"
+            ' "$tmpFile"
+        } > "$tmpOutput"
+    }; then
+        :
+    else
+        echo "依赖列表解析失败: 需要可用的 python3 或 jq 以解析 Initializr 元数据"
         exit "$EXIT_DEP"
     fi
 
@@ -414,13 +471,15 @@ extract_dependencies_declaration_block() {
 
     if [[ "$targetType" == "maven" ]]; then
         endpoint="pom.xml"
+    elif [[ "${gradleDsl:-groovy}" == "kotlin" ]]; then
+        endpoint="build.gradle.kts"
     else
         endpoint="build.gradle"
     fi
 
     resolve_starter_boot_param_key
     bootParamKey="${STARTER_BOOT_PARAM_KEY:-bootVersion}"
-    descriptorUrl="https://start.spring.io/${endpoint}?type=${targetType}-project&language=java&${bootParamKey}=${bootVersion}&groupId=com.example&artifactId=deps-preview&name=deps-preview&packageName=com.example.depspreview&packaging=jar&javaVersion=${javaVersion}&dependencies=${depsCsv}"
+    descriptorUrl="$(initializr_url "${endpoint}")?type=${targetType}-project&language=${projectLanguage}&${bootParamKey}=${bootVersion}&groupId=com.example&artifactId=deps-preview&name=deps-preview&packageName=com.example.depspreview&packaging=jar&javaVersion=${javaVersion}&dependencies=${depsCsv}"
 
     tmpFile=$(mktemp)
     register_tmp_file "$tmpFile"
@@ -549,7 +608,8 @@ open_dependency_catalog_web() {
 validate_dependencies_against_initializr() {
     local requestedCsv="$1"
     resolve_boot_param_key
-    local metadataUrl="https://start.spring.io/metadata/client?${BOOT_PARAM_KEY}=${bootVersion}"
+    local metadataUrl
+    metadataUrl="$(initializr_url "metadata/client")?${BOOT_PARAM_KEY}=${bootVersion}"
     local tmpFile
     tmpFile=$(mktemp)
     register_tmp_file "$tmpFile"
@@ -558,7 +618,7 @@ validate_dependencies_against_initializr() {
         exit "$EXIT_NETWORK"
     fi
 
-    if ! python3 - "$tmpFile" "$requestedCsv" <<'PY'
+    if command -v python3 >/dev/null 2>&1 && python3 - "$tmpFile" "$requestedCsv" <<'PY'
 import difflib
 import json
 import sys
@@ -591,7 +651,28 @@ print("可先执行 'springboot deps list --boot=<版本>' 查看当前 Boot 版
 sys.exit(1)
 PY
     then
-        exit "$EXIT_PARAM"
+        return 0
+    elif command -v jq >/dev/null 2>&1; then
+        local availableIds
+        local unknownIds
+        availableIds=$(jq -r '.dependencies.values[]?.values[]?.id // empty' "$tmpFile" | sort -u)
+        unknownIds=""
+        while IFS= read -r dep; do
+            [ -z "$dep" ] && continue
+            if ! printf '%s\n' "$availableIds" | awk -v target="$dep" '$0 == target {found=1} END {exit found?0:1}'; then
+                unknownIds="${unknownIds}${dep},"
+            fi
+        done < <(printf '%s\n' "$requestedCsv" | tr ',' '\n')
+        if [ -n "$unknownIds" ]; then
+            unknownIds="${unknownIds%,}"
+            echo "存在无效依赖ID: ${unknownIds}"
+            echo "可先执行 'springboot deps list --boot=<版本>' 查看当前 Boot 版本支持的依赖ID。"
+            exit "$EXIT_PARAM"
+        fi
+        return 0
+    else
+        echo "依赖校验失败: 需要可用的 python3 或 jq 解析 Initializr 元数据"
+        exit "$EXIT_DEP"
     fi
 }
 
@@ -600,6 +681,20 @@ PY
 # 作用: 输出入口命令帮助信息。
 # -----------------------------------------------------------------------------
 print_help_root() {
+    if is_english_help; then
+        echo "Usage:"
+        echo "  springboot <command> [options]"
+        echo ""
+        echo "Commands:"
+        echo "  create            Create project (single or multi module)"
+        echo "  module            Module operations (add/list/remove)"
+        echo "  deps              Dependency tools (list/preview/search)"
+        echo ""
+        echo "Global options:"
+        echo "  --help, -h        Show help"
+        echo "  --version, -v     Show version"
+        return 0
+    fi
     echo "用法:"
     echo "  springboot <command> [options]"
     echo ""
@@ -609,8 +704,8 @@ print_help_root() {
     echo ""
     echo "命令:"
     echo "  create            创建项目（单模块或多模块）"
-    echo "  module            模块操作（当前支持 add）"
-    echo "  deps              依赖工具（list / preview）"
+    echo "  module            模块操作（add / list / remove）"
+    echo "  deps              依赖工具（list / preview / search）"
     echo ""
     echo "通用选项:"
     echo "  --help, -h        显示帮助信息并退出"
@@ -625,6 +720,7 @@ print_help_root() {
     echo "  springboot module add --name=myproject --type=maven --module=order --deps=webflux"
     echo "  springboot deps list --boot=3.5.14 --output=terminal"
     echo "  springboot deps preview --type=gradle --deps=web,data-jpa --boot=3.5.14"
+    echo "  springboot module list --name=myproject --type=maven"
 }
 
 print_help_create() {
@@ -641,7 +737,7 @@ print_help_create() {
     echo "  --type=<值>                  构建工具：maven | gradle（默认 maven）"
     echo "  --packaging=<值>             打包方式：jar | war | pom（默认 jar）"
     echo "  --modules=<值>               子模块列表（逗号分隔，仅 packaging=pom 生效）"
-    echo "  --deps=<值>                  依赖ID列表（默认 web,devtools）"
+    echo "  --deps=<值>                  依赖ID列表（默认 ${DEFAULT_DEPS}）"
     echo "                               仅支持 Spring Boot 官方 Initializr 提供的依赖ID"
     echo "                               可先执行 springboot deps list --boot=<版本> 查看可用依赖ID"
     echo "                               - 单模块(jar/war): 作用于当前项目"
@@ -649,6 +745,8 @@ print_help_create() {
     echo "  --boot=<值>                  Spring Boot 版本（默认 3.5.14）"
     echo "  --config=<值>                配置文件格式：properties | yaml（默认 properties）"
     echo "  --java=<值>                  Java 版本：17 | 21 | 25（默认 17）"
+    echo "  --language=<值>              代码语言：java | kotlin | groovy（默认 java）"
+    echo "  --gradle-dsl=<值>            Gradle DSL：groovy | kotlin（默认 groovy）"
     echo "  --group=<值>                 Group Id（默认 com.example）"
     echo "  --artifact=<值>              Artifact Id（默认同 --name）"
     echo "  --artifact-version=<值>      项目版本（默认 0.0.1）"
@@ -665,6 +763,7 @@ print_help_create() {
     echo "  springboot create --name=mydemo"
     echo "  springboot create --name=mydemo --type=gradle --packaging=war --java=21"
     echo "  springboot create --name=myproject --type=maven --packaging=pom --modules=api,service --deps=web,data-jpa --dry-run"
+    echo "  springboot create --name=mydemo --type=gradle --gradle-dsl=kotlin --language=kotlin"
 }
 
 print_help_module() {
@@ -673,13 +772,16 @@ print_help_module() {
     echo ""
     echo "子命令:"
     echo "  add               向已有多模块项目追加子模块"
+    echo "  list              列出当前多模块项目下的子模块"
+    echo "  remove            从多模块项目中移除子模块"
     echo ""
     echo "选项:"
     echo "  --help, -h        显示帮助信息并退出"
     echo ""
     echo "示例:"
     echo "  springboot module add --name=myproject --type=maven --module=order --deps=webflux"
-    echo "  springboot module add --name=myproject --type=gradle --module=api --module-path=platform/common --deps=web,data-jpa"
+    echo "  springboot module list --name=myproject --type=gradle"
+    echo "  springboot module remove --name=myproject --type=gradle --module=api"
 }
 
 print_help_module_add() {
@@ -699,11 +801,13 @@ print_help_module_add() {
     echo "  --packaging=<值>             仅支持 pom（未显式传入时默认按 pom 处理）"
     echo "  --module-packaging=<值>      子模块打包方式：jar | pom（默认 jar）"
     echo "  --module-path=<值>           父模块路径（相对项目根，默认挂载到项目根）"
-    echo "  --deps=<值>                  依赖ID列表（默认 web,devtools，仅 module-packaging=jar 生效）"
+    echo "  --deps=<值>                  依赖ID列表（默认 ${DEFAULT_DEPS}，仅 module-packaging=jar 生效）"
     echo "                               仅支持 Spring Boot 官方 Initializr 提供的依赖ID"
     echo "  --boot=<值>                  Spring Boot 版本（默认 3.5.14）"
     echo "  --config=<值>                配置文件格式：properties | yaml（默认 properties）"
     echo "  --java=<值>                  Java 版本：17 | 21 | 25（默认 17）"
+    echo "  --language=<值>              代码语言：java | kotlin | groovy（默认 java）"
+    echo "  --gradle-dsl=<值>            Gradle DSL：groovy | kotlin（默认 groovy）"
     echo "  --group=<值>                 Group Id（默认 com.example）"
     echo "  --pkg=<值>                   根包名（默认同 --group，自动将 '-' 替换为 '_'）"
     echo "  --dry-run                    仅打印执行计划，不创建或修改任何文件"
@@ -719,6 +823,30 @@ print_help_module_add() {
     echo "  springboot module add --name=myproject --type=maven --module=platform --module-packaging=pom"
 }
 
+print_help_module_list() {
+    echo "用法:"
+    echo "  springboot module list --name=<项目名> --type=<maven|gradle> [选项]"
+    echo ""
+    echo "选项:"
+    echo "  --name=<值>                  目标项目名"
+    echo "  --type=<值>                  构建工具：maven | gradle（默认 maven）"
+    echo "  --module-path=<值>           Maven 父模块路径（默认项目根）"
+    echo "  --help, -h                   显示帮助信息并退出"
+}
+
+print_help_module_remove() {
+    echo "用法:"
+    echo "  springboot module remove --name=<项目名> --type=<maven|gradle> --module=<子模块名> [选项]"
+    echo ""
+    echo "选项:"
+    echo "  --name=<值>                  目标项目名"
+    echo "  --module=<值>                待移除子模块名"
+    echo "  --type=<值>                  构建工具：maven | gradle（默认 maven）"
+    echo "  --module-path=<值>           父模块路径（默认项目根）"
+    echo "  --dry-run                    仅打印执行计划，不修改文件"
+    echo "  --help, -h                   显示帮助信息并退出"
+}
+
 print_help_deps() {
     echo "用法:"
     echo "  springboot deps <subcommand> [options]"
@@ -726,6 +854,7 @@ print_help_deps() {
     echo "子命令:"
     echo "  list              查看依赖列表（终端或网页）"
     echo "  preview           输出依赖声明片段（Maven/Gradle）"
+    echo "  search            按关键词搜索依赖 ID"
     echo ""
     echo "选项:"
     echo "  --help, -h        显示帮助信息并退出"
@@ -746,6 +875,7 @@ print_help_deps_list() {
     echo "选项:"
     echo "  --boot=<值>                  Spring Boot 版本（默认 3.5.14）"
     echo "  --output=<值>                输出方式：terminal | web（默认 terminal）"
+    echo "  --refresh                    强制刷新缓存"
     echo "  --help, -h                   显示本命令帮助并退出"
     echo ""
     echo "示例:"
@@ -768,6 +898,8 @@ print_help_deps_preview() {
     echo ""
     echo "选项:"
     echo "  --type=<值>                  构建工具：maven | gradle（默认 maven）"
+    echo "  --language=<值>              代码语言：java | kotlin | groovy（默认 java）"
+    echo "  --gradle-dsl=<值>            Gradle DSL：groovy | kotlin（默认 groovy）"
     echo "  --boot=<值>                  Spring Boot 版本（默认 3.5.14）"
     echo "  --java=<值>                  Java 版本：17 | 21 | 25（默认 17）"
     echo "  --help, -h                   显示本命令帮助并退出"
@@ -775,6 +907,16 @@ print_help_deps_preview() {
     echo "示例:"
     echo "  springboot deps preview --deps=web,data-jpa"
     echo "  springboot deps preview --type=gradle --deps=web,data-jpa,mysql --boot=3.5.14"
+}
+
+print_help_deps_search() {
+    echo "用法:"
+    echo "  springboot deps search --query=<关键词> [选项]"
+    echo ""
+    echo "选项:"
+    echo "  --query=<值>                 搜索关键词（匹配 ID / 名称 / 描述）"
+    echo "  --boot=<值>                  Spring Boot 版本（默认 3.5.14）"
+    echo "  --help, -h                   显示帮助信息并退出"
 }
 
 plan_step=0
@@ -789,6 +931,140 @@ plan_echo() {
     fi
     plan_step=$((plan_step + 1))
     printf '[PLAN %02d][%s] %s\n' "${plan_step}" "${stepType}" "${message}"
+}
+
+run_interactive_wizard() {
+    local choice=""
+    echo "未提供命令，进入交互式向导。"
+    echo "1) create  2) deps list  3) deps preview  0) 退出"
+    printf "请选择操作: "
+    read -r choice
+    case "$choice" in
+        1)
+            local nameInput
+            printf "请输入项目名: "
+            read -r nameInput
+            [ -n "$nameInput" ] || { echo "项目名不能为空"; exit "$EXIT_PARAM"; }
+            exec "$0" create --name="$nameInput"
+            ;;
+        2)
+            exec "$0" deps list
+            ;;
+        3)
+            local depsInput
+            printf "请输入依赖列表（逗号分隔）: "
+            read -r depsInput
+            [ -n "$depsInput" ] || { echo "依赖不能为空"; exit "$EXIT_PARAM"; }
+            exec "$0" deps preview --deps="$depsInput"
+            ;;
+        *)
+            echo "已退出。"
+            exit 0
+            ;;
+    esac
+}
+
+list_modules_from_maven_pom() {
+    local pomFile="$1"
+    awk '
+        /<modules>/ {in_modules=1; next}
+        /<\/modules>/ {in_modules=0; next}
+        in_modules && /<module>/ {
+            line=$0
+            gsub(/.*<module>/, "", line)
+            gsub(/<\/module>.*/, "", line)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+            if (line != "") print line
+        }
+    ' "$pomFile"
+}
+
+module_list_command() {
+    local parentDir parentPom settingsFile
+    parentDir="$projectName"
+    if [ -n "${modulePath:-}" ]; then
+        parentDir="${projectName}/${modulePath}"
+    fi
+    if [ "$projectType" = "maven" ]; then
+        parentPom="${parentDir}/pom.xml"
+        [ -f "$parentPom" ] || { echo "父模块 pom.xml 不存在: ${parentPom}"; exit "$EXIT_FS"; }
+        list_modules_from_maven_pom "$parentPom"
+        return 0
+    fi
+    settingsFile="${projectName}/settings.gradle"
+    [ -f "$settingsFile" ] || settingsFile="${projectName}/settings.gradle.kts"
+    [ -f "$settingsFile" ] || { echo "settings.gradle(.kts) 不存在: ${projectName}"; exit "$EXIT_FS"; }
+    awk '
+        /^include/ {
+            line=$0
+            gsub(/include[[:space:]]*/, "", line)
+            gsub(/[()'"'"'" ]/, "", line)
+            gsub(/^:/, "", line)
+            gsub(/:/, "/", line)
+            if (line != "") print line
+        }
+    ' "$settingsFile"
+}
+
+module_remove_command() {
+    local parentDir moduleEntry moduleDir parentPom settingsFile includePath
+    parentDir="$projectName"
+    if [ -n "${modulePath:-}" ]; then
+        parentDir="${projectName}/${modulePath}"
+        moduleEntry="${modulePath}/${addModuleName}"
+        includePath=":${modulePath//\//:}:${addModuleName}"
+    else
+        moduleEntry="${addModuleName}"
+        includePath=":${addModuleName}"
+    fi
+    moduleDir="${parentDir}/${addModuleName}"
+
+    if [[ "${dryRun:-false}" == "true" ]]; then
+        echo "[DRY-RUN] 将移除目录: ${moduleDir}"
+        if [ "$projectType" = "maven" ]; then
+            echo "[DRY-RUN] 将从父 pom.xml 删除 <module>${moduleEntry}</module>"
+        else
+            echo "[DRY-RUN] 将从 settings.gradle(.kts) 删除 include ${includePath}"
+        fi
+        return 0
+    fi
+
+    if [ "$projectType" = "maven" ]; then
+        parentPom="${parentDir}/pom.xml"
+        [ -f "$parentPom" ] || { echo "父模块 pom.xml 不存在: ${parentPom}"; exit "$EXIT_FS"; }
+        awk -v mod="<module>${moduleEntry}</module>" 'index($0, mod)==0 {print}' "$parentPom" > "${parentPom}.tmp" && mv "${parentPom}.tmp" "$parentPom"
+    else
+        settingsFile="${projectName}/settings.gradle"
+        [ -f "$settingsFile" ] || settingsFile="${projectName}/settings.gradle.kts"
+        [ -f "$settingsFile" ] || { echo "settings.gradle(.kts) 不存在: ${projectName}"; exit "$EXIT_FS"; }
+        awk -v includePath="$includePath" '
+            {
+                line=$0
+                if (line ~ /^include/ && line ~ includePath) next
+                print line
+            }
+        ' "$settingsFile" > "${settingsFile}.tmp" && mv "${settingsFile}.tmp" "$settingsFile"
+    fi
+
+    if [ -d "$moduleDir" ]; then
+        rm -rf "$moduleDir"
+    fi
+    echo "已移除子模块: ${addModuleName}"
+}
+
+deps_search_command() {
+    local query="$1"
+    ensure_dependency_catalog_cache
+    [ -n "$query" ] || { echo "缺少 --query 参数"; exit "$EXIT_PARAM"; }
+    awk -F'|' -v keyword="$query" '
+        BEGIN { kw=tolower(keyword) }
+        /^\|/ {
+            line=tolower($0)
+            if (index(line, kw) > 0 && $0 !~ /\| --- \|/ && $0 !~ /\| Group \|/) {
+                print $0
+            }
+        }
+    ' "$DEP_CACHE_FILE"
 }
 
 validate_dependencies_format() {
@@ -832,6 +1108,14 @@ validate_shared_project_args() {
     fi
     if [[ "$javaVersion" != "17" && "$javaVersion" != "21" && "$javaVersion" != "25" ]]; then
         echo "Java版本不合法: 仅支持 17、21 或 25"
+        exit "$EXIT_PARAM"
+    fi
+    if [[ "$projectLanguage" != "java" && "$projectLanguage" != "kotlin" && "$projectLanguage" != "groovy" ]]; then
+        echo "language 不合法: 仅支持 java、kotlin 或 groovy"
+        exit "$EXIT_PARAM"
+    fi
+    if [[ "$gradleDsl" != "groovy" && "$gradleDsl" != "kotlin" ]]; then
+        echo "gradle-dsl 不合法: 仅支持 groovy 或 kotlin"
         exit "$EXIT_PARAM"
     fi
     if [[ ! "$groupId" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*(\.[a-zA-Z0-9][a-zA-Z0-9_-]*)+$ ]]; then
@@ -944,6 +1228,14 @@ validate_deps_preview_args() {
         echo "Java版本不合法: 仅支持 17、21 或 25"
         exit "$EXIT_PARAM"
     fi
+    if [[ "$projectLanguage" != "java" && "$projectLanguage" != "kotlin" && "$projectLanguage" != "groovy" ]]; then
+        echo "language 不合法: 仅支持 java、kotlin 或 groovy"
+        exit "$EXIT_PARAM"
+    fi
+    if [[ "$gradleDsl" != "groovy" && "$gradleDsl" != "kotlin" ]]; then
+        echo "gradle-dsl 不合法: 仅支持 groovy 或 kotlin"
+        exit "$EXIT_PARAM"
+    fi
     if [ -z "$depsPreviewCsv" ]; then
         log_error "deps preview 模式必须提供 --deps=<依赖ID列表>"
         exit "$EXIT_PARAM"
@@ -979,6 +1271,10 @@ run_project_mode() {
     fi
     echo "  配置文件:     $configFormat"
     echo "  Java版本:     $javaVersion"
+    echo "  代码语言:     $projectLanguage"
+    if [[ "$projectType" == "gradle" ]]; then
+        echo "  Gradle DSL:   $gradleDsl"
+    fi
     echo "  Group Id:     $groupId"
     echo "  Artifact Id:  $artifactId"
     echo "  项目版本:     $projectVersion"
@@ -1034,8 +1330,12 @@ run_project_mode() {
 mode=""
 depsOutput=""
 depsPreviewCsv=""
+depsSearchQuery=""
 
 if [ "$#" -eq 0 ]; then
+    if [ -t 0 ]; then
+        run_interactive_wizard
+    fi
     print_help_root
     exit "$EXIT_PARAM"
 fi
@@ -1068,6 +1368,14 @@ case "$1" in
                 mode="module-add"
                 shift
                 ;;
+            list)
+                mode="module-list"
+                shift
+                ;;
+            remove)
+                mode="module-remove"
+                shift
+                ;;
             *)
                 log_error "未知子命令: module $1"
                 print_help_module
@@ -1092,6 +1400,10 @@ case "$1" in
                 ;;
             preview)
                 mode="deps-preview"
+                shift
+                ;;
+            search)
+                mode="deps-search"
                 shift
                 ;;
             *)
@@ -1121,6 +1433,8 @@ case "$mode" in
                 --modules=*) subModules="${1#*=}" ;;
                 --config=*) configFormat="${1#*=}" ;;
                 --java=*) javaVersion="${1#*=}" ;;
+                --language=*) projectLanguage="${1#*=}" ;;
+                --gradle-dsl=*) gradleDsl="${1#*=}" ;;
                 --group=*) groupId="${1#*=}" ;;
                 --artifact=*) artifactId="${1#*=}" ;;
                 --artifact-version=*) projectVersion="${1#*=}" ;;
@@ -1148,7 +1462,9 @@ case "$mode" in
         projectVersion=${projectVersion:-0.0.1}
         description=${description:-Demo project for Spring Boot}
         packageName=${packageName:-$(printf '%s' "$groupId" | tr '-' '_')}
-        dependencies=${dependencies:-web,devtools}
+        projectLanguage=${projectLanguage:-java}
+        gradleDsl=${gradleDsl:-groovy}
+        dependencies=${dependencies:-$DEFAULT_DEPS}
         dependencies=$(normalize_deps_csv "$dependencies")
         subModules=$(normalize_modules_csv "${subModules:-}")
         modulePackaging=${modulePackaging:-jar}
@@ -1162,7 +1478,7 @@ case "$mode" in
                 validate_dependencies_against_initializr "$dependencies"
                 resolve_starter_boot_param_key
                 bootParamKeyStarter="${STARTER_BOOT_PARAM_KEY:-bootVersion}"
-            elif [[ "$dependencies" != "web,devtools" ]]; then
+            elif [[ "$dependencies" != "$DEFAULT_DEPS" ]]; then
                 validate_dependencies_against_initializr "$dependencies"
             fi
         fi
@@ -1189,6 +1505,8 @@ case "$mode" in
                 --packaging=*) packaging="${1#*=}" ;;
                 --config=*) configFormat="${1#*=}" ;;
                 --java=*) javaVersion="${1#*=}" ;;
+                --language=*) projectLanguage="${1#*=}" ;;
+                --gradle-dsl=*) gradleDsl="${1#*=}" ;;
                 --group=*) groupId="${1#*=}" ;;
                 --artifact=*) artifactId="${1#*=}" ;;
                 --artifact-version=*) projectVersion="${1#*=}" ;;
@@ -1216,7 +1534,9 @@ case "$mode" in
         projectVersion=${projectVersion:-0.0.1}
         description=${description:-Demo project for Spring Boot}
         packageName=${packageName:-$(printf '%s' "$groupId" | tr '-' '_')}
-        dependencies=${dependencies:-web,devtools}
+        projectLanguage=${projectLanguage:-java}
+        gradleDsl=${gradleDsl:-groovy}
+        dependencies=${dependencies:-$DEFAULT_DEPS}
         dependencies=$(normalize_deps_csv "$dependencies")
         subModules=""
         modulePackaging=${modulePackaging:-jar}
@@ -1225,10 +1545,61 @@ case "$mode" in
         modulePath=${modulePath:-}
 
         validate_module_add_args
-        if [[ "$dryRun" != "true" && "$modulePackaging" == "jar" && "$dependencies" != "web,devtools" ]]; then
+        if [[ "$dryRun" != "true" && "$modulePackaging" == "jar" && "$dependencies" != "$DEFAULT_DEPS" ]]; then
             validate_dependencies_against_initializr "$dependencies"
         fi
         run_project_mode
+        ;;
+
+    module-list)
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                --help|-h) print_help_module_list; exit 0 ;;
+                --name=*) projectName="${1#*=}" ;;
+                --type=*) projectType="${1#*=}" ;;
+                --module-path=*) modulePath="${1#*=}" ;;
+                *)
+                    log_error "module list 模式未知参数: $1"
+                    print_help_module_list
+                    exit "$EXIT_PARAM"
+                    ;;
+            esac
+            shift
+        done
+        projectType=${projectType:-maven}
+        modulePath=${modulePath:-}
+        if [ -z "${projectName:-}" ]; then
+            log_error "module list 必须提供 --name=<项目名>"
+            exit "$EXIT_PARAM"
+        fi
+        module_list_command
+        ;;
+
+    module-remove)
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                --help|-h) print_help_module_remove; exit 0 ;;
+                --dry-run) dryRun=true ;;
+                --name=*) projectName="${1#*=}" ;;
+                --type=*) projectType="${1#*=}" ;;
+                --module=*) addModuleName="${1#*=}" ;;
+                --module-path=*) modulePath="${1#*=}" ;;
+                *)
+                    log_error "module remove 模式未知参数: $1"
+                    print_help_module_remove
+                    exit "$EXIT_PARAM"
+                    ;;
+            esac
+            shift
+        done
+        dryRun=${dryRun:-false}
+        projectType=${projectType:-maven}
+        modulePath=${modulePath:-}
+        if [ -z "${projectName:-}" ] || [ -z "${addModuleName:-}" ]; then
+            log_error "module remove 必须提供 --name 和 --module"
+            exit "$EXIT_PARAM"
+        fi
+        module_remove_command
         ;;
 
     deps-list)
@@ -1237,6 +1608,7 @@ case "$mode" in
                 --help|-h) print_help_deps_list; exit 0 ;;
                 --boot=*) bootVersion="${1#*=}" ;;
                 --output=*) depsOutput="${1#*=}" ;;
+                --refresh) depsForceRefresh=true ;;
                 *)
                     log_error "deps list 模式未知参数: $1"
                     print_help_deps_list
@@ -1265,6 +1637,8 @@ case "$mode" in
                 --boot=*) bootVersion="${1#*=}" ;;
                 --type=*) projectType="${1#*=}" ;;
                 --java=*) javaVersion="${1#*=}" ;;
+                --language=*) projectLanguage="${1#*=}" ;;
+                --gradle-dsl=*) gradleDsl="${1#*=}" ;;
                 *)
                     log_error "deps preview 模式未知参数: $1"
                     print_help_deps_preview
@@ -1276,8 +1650,31 @@ case "$mode" in
         bootVersion=${bootVersion:-3.5.14}
         projectType=${projectType:-maven}
         javaVersion=${javaVersion:-17}
+        projectLanguage=${projectLanguage:-java}
+        gradleDsl=${gradleDsl:-groovy}
         depsPreviewCsv=$(normalize_deps_csv "$depsPreviewCsv")
         validate_deps_preview_args
         print_dependencies_declaration "$depsPreviewCsv"
+        ;;
+
+    deps-search)
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                --help|-h) print_help_deps_search; exit 0 ;;
+                --query=*) depsSearchQuery="${1#*=}" ;;
+                --boot=*) bootVersion="${1#*=}" ;;
+                --refresh) depsForceRefresh=true ;;
+                *)
+                    log_error "deps search 模式未知参数: $1"
+                    print_help_deps_search
+                    exit "$EXIT_PARAM"
+                    ;;
+            esac
+            shift
+        done
+        bootVersion=${bootVersion:-3.5.14}
+        depsOutput=${depsOutput:-terminal}
+        validate_deps_list_args
+        deps_search_command "$depsSearchQuery"
         ;;
 esac

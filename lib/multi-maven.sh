@@ -325,10 +325,10 @@ MAVEN_DEPS_CACHE_VALUE=""
 resolve_maven_dependencies_block() {
     local depsCsv="$1"
     if [ -z "$depsCsv" ]; then
-        depsCsv="web,devtools"
+        depsCsv="${DEFAULT_DEPS:-web,devtools}"
     fi
 
-    if [[ "$depsCsv" == "web,devtools" ]]; then
+    if [[ "$depsCsv" == "${DEFAULT_DEPS:-web,devtools}" ]]; then
         printf '%s\n' '        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
@@ -437,7 +437,7 @@ create_maven_module() {
     local mod="$1"
     local modDir="$2"
     local modulePkg="${3:-jar}"
-    local depsCsv="${4:-${dependencies:-web,devtools}}"
+    local depsCsv="${4:-${dependencies:-${DEFAULT_DEPS:-web,devtools}}}"
     local depsBlock=""
     local escapedGroupId escapedArtifactId escapedParentVersion escapedMod
     escapedGroupId="$(xml_escape "$groupId")"

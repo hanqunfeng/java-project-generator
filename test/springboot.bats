@@ -283,3 +283,55 @@ EOF
   [ "$status" -eq 0 ]
   [[ "$output" == *"--output=<值>"* ]]
 }
+
+@test "支持 language 与 gradle-dsl 参数（dry-run）" {
+  run bash "$PROJECT_ROOT/springboot" create --name=abcde --type=gradle --packaging=pom --modules=api --language=kotlin --gradle-dsl=kotlin --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"代码语言:     kotlin"* ]]
+  [[ "$output" == *"Gradle DSL:   kotlin"* ]]
+}
+
+@test "Maven 项目配置输出不包含 Gradle DSL" {
+  run bash "$PROJECT_ROOT/springboot" create --name=abcde --type=maven --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"Gradle DSL:"* ]]
+}
+
+@test "module list 支持 maven 项目" {
+  mkdir -p abcde
+  cat > abcde/pom.xml <<'EOF'
+<project>
+  <modules>
+    <module>api</module>
+    <module>service</module>
+  </modules>
+</project>
+EOF
+  run bash "$PROJECT_ROOT/springboot" module list --name=abcde --type=maven
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"api"* ]]
+  [[ "$output" == *"service"* ]]
+}
+
+@test "deps search 关键词参数校验" {
+  run bash "$PROJECT_ROOT/springboot" deps search --query=
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"缺少 --query 参数"* ]]
+}
+
+@test "创建 Maven 多模块后子模块 pom.xml 包含 dependencies" {
+  run bash "$PROJECT_ROOT/springboot" create --name=abcde --packaging=pom --type=maven --modules=api
+  [ "$status" -eq 0 ]
+  [ -f "abcde/api/pom.xml" ]
+  run rg "<dependencies>" "abcde/api/pom.xml"
+  [ "$status" -eq 0 ]
+}
+
+@test "创建 Gradle Kotlin DSL 多模块后生成 kts 文件" {
+  run bash "$PROJECT_ROOT/springboot" create --name=abcde --packaging=pom --type=gradle --modules=api --gradle-dsl=kotlin --language=kotlin
+  [ "$status" -eq 0 ]
+  [ -f "abcde/settings.gradle.kts" ]
+  [ -f "abcde/api/build.gradle.kts" ]
+  run rg "id\\(kotlin\\)" "abcde/api/build.gradle.kts"
+  [ "$status" -eq 0 ]
+}

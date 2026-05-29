@@ -15,6 +15,15 @@ exit_fs="${EXIT_FS:-3}"
 exit_dep="${EXIT_DEP:-4}"
 # 可通过环境变量覆盖 dependency-management 插件版本。
 gradle_dm_plugin_version="${GRADLE_DM_PLUGIN_VERSION:-1.1.7}"
+gradle_dsl="${gradleDsl:-groovy}"
+root_settings_file="settings.gradle"
+root_build_file="build.gradle"
+module_build_file="build.gradle"
+if [[ "$gradle_dsl" == "kotlin" ]]; then
+    root_settings_file="settings.gradle.kts"
+    root_build_file="build.gradle.kts"
+    module_build_file="build.gradle.kts"
+fi
 
 GRADLE_DEPS_CACHE_KEY=""
 GRADLE_DEPS_CACHE_VALUE=""
@@ -40,7 +49,19 @@ escape_gradle_single_quoted() {
 # -----------------------------------------------------------------------------
 resolve_gradle_target_parent() {
     resolve_parent_dir_common
-    rootSettingsFile="${projectName}/settings.gradle"
+    rootSettingsFile="${projectName}/${root_settings_file}"
+    if [ ! -f "$rootSettingsFile" ] && [ -f "${projectName}/settings.gradle" ]; then
+        rootSettingsFile="${projectName}/settings.gradle"
+        root_settings_file="settings.gradle"
+        gradle_dsl="groovy"
+    fi
+    if [ ! -f "$rootSettingsFile" ] && [ -f "${projectName}/settings.gradle.kts" ]; then
+        rootSettingsFile="${projectName}/settings.gradle.kts"
+        root_settings_file="settings.gradle.kts"
+        root_build_file="build.gradle.kts"
+        module_build_file="build.gradle.kts"
+        gradle_dsl="kotlin"
+    fi
 
     ensure_dir_exists_common "$targetParentDir" "父模块目录不存在"
     ensure_file_exists_common "$rootSettingsFile" "settings.gradle 不存在"
@@ -57,13 +78,19 @@ resolve_gradle_target_parent() {
 resolve_gradle_dependencies_block() {
     local depsCsv="$1"
     if [ -z "$depsCsv" ]; then
-        depsCsv="web,devtools"
+        depsCsv="${DEFAULT_DEPS:-web,devtools}"
     fi
 
-    if [[ "$depsCsv" == "web,devtools" ]]; then
-        printf '%s\n' "    implementation 'org.springframework.boot:spring-boot-starter-web'
+    if [[ "$depsCsv" == "${DEFAULT_DEPS:-web,devtools}" ]]; then
+        if [[ "$gradle_dsl" == "kotlin" ]]; then
+            printf '%s\n' '    implementation("org.springframework.boot:spring-boot-starter-web")
+    developmentOnly("org.springframework.boot:spring-boot-devtools")
+    testImplementation("org.springframework.boot:spring-boot-starter-test")'
+        else
+            printf '%s\n' "    implementation 'org.springframework.boot:spring-boot-starter-web'
     developmentOnly 'org.springframework.boot:spring-boot-devtools'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'"
+        fi
         return 0
     fi
 
@@ -93,14 +120,14 @@ print_gradle_module_plan() {
 
     if [[ "$modulePkg" == "jar" ]]; then
         print_jar_module_scaffold_plan_common "${modDir}" "${packageName}" "${mod}" "${configFormat}"
-        plan_echo "WRITE" "写入子模块依赖: '${modDir}/build.gradle' <- --deps=${depsCsv}"
-        plan_echo "WRITE" "生成子模块构建文件: '${modDir}/build.gradle' (packaging=jar, bootVersion=${bootVersion}, javaVersion=${javaVersion}, dependencyManagementVersion=${gradle_dm_plugin_version})"
+        plan_echo "WRITE" "写入子模块依赖: '${modDir}/${module_build_file}' <- --deps=${depsCsv}"
+        plan_echo "WRITE" "生成子模块构建文件: '${modDir}/${module_build_file}' (packaging=jar, bootVersion=${bootVersion}, javaVersion=${javaVersion}, dependencyManagementVersion=${gradle_dm_plugin_version})"
     else
         plan_echo "WRITE" "创建聚合模块目录: '${modDir}' (packaging=pom 映射为聚合模块，不生成 src 与依赖)"
         plan_echo "FLOW" "module-packaging=pom 时忽略 --deps=${depsCsv}"
-        plan_echo "WRITE" "生成聚合模块构建文件: '${modDir}/build.gradle' (不应用 java/spring-boot 插件)"
+        plan_echo "WRITE" "生成聚合模块构建文件: '${modDir}/${module_build_file}' (不应用 java/spring-boot 插件)"
     fi
-    plan_echo "WRITE" "更新根 settings.gradle: '${projectName}/settings.gradle'，追加 \"include '${includePath}'\""
+    plan_echo "WRITE" "更新根 ${root_settings_file}: '${projectName}/${root_settings_file}'，追加 include '${includePath}'"
 }
 
 # -----------------------------------------------------------------------------
@@ -118,7 +145,7 @@ print_gradle_plan() {
         local includePath
         includePath=$(build_gradle_include_path_common "$modulePath" "$mod")
         plan_echo "CHECK" "解析父模块路径: '${modulePath:-<项目根>}' -> '${parentDirForPlan}'"
-        plan_echo "CHECK" "检查根 settings.gradle 存在: '${projectName}/settings.gradle'"
+        plan_echo "CHECK" "检查根 ${root_settings_file} 存在: '${projectName}/${root_settings_file}'"
         plan_echo "CHECK" "检查子模块目录不存在: '${modDir}'"
         print_gradle_module_plan "$mod" "$modDir" "${modulePackaging}" "$includePath" "${dependencies}"
         plan_echo "CHECK" "若 settings.gradle 中已包含 '${includePath}'，则终止并提示冲突"
@@ -129,10 +156,10 @@ print_gradle_plan() {
         if [ -n "$subModules" ]; then
             plan_echo "FLOW" "根据 modules 参数构建 settings.gradle include 列表: '${subModules}'"
         else
-            plan_echo "FLOW" "未提供 modules 参数，settings.gradle 仅包含 rootProject.name"
+            plan_echo "FLOW" "未提供 modules 参数，${root_settings_file} 仅包含 rootProject.name"
         fi
-        plan_echo "WRITE" "生成 settings.gradle: '${projectName}/settings.gradle'"
-        plan_echo "WRITE" "生成根 build.gradle: '${projectName}/build.gradle' (group=${groupId}, version=${projectVersion})"
+        plan_echo "WRITE" "生成 ${root_settings_file}: '${projectName}/${root_settings_file}'"
+        plan_echo "WRITE" "生成根 ${root_build_file}: '${projectName}/${root_build_file}' (group=${groupId}, version=${projectVersion})"
         if [ -n "$subModules" ]; then
             while IFS= read -r mod; do
                 [ -z "$mod" ] && continue
@@ -156,18 +183,42 @@ create_gradle_module() {
     local mod="$1"
     local modDir="$2"
     local modulePkg="${3:-jar}"
-    local depsCsv="${4:-${dependencies:-web,devtools}}"
+    local depsCsv="${4:-${dependencies:-${DEFAULT_DEPS:-web,devtools}}}"
     local depsBlock=""
-    local escapedBootVersion escapedDmVersion
+    local escapedBootVersion escapedDmVersion source_language
     escapedBootVersion="$(escape_gradle_single_quoted "$bootVersion")"
     escapedDmVersion="$(escape_gradle_single_quoted "$gradle_dm_plugin_version")"
+    source_language="${projectLanguage:-java}"
     if [[ "$modulePkg" == "jar" ]]; then
         create_module_scaffold_common "${modDir}" "${packageName}" "${mod}" "${configFormat}" "${modulePkg}"
         depsBlock="$(resolve_gradle_dependencies_block "$depsCsv")"
-        # 生成子模块 build.gradle
-        cat > "${modDir}/build.gradle" <<EOF
+        if [[ "$gradle_dsl" == "kotlin" ]]; then
+            cat > "${modDir}/${module_build_file}" <<EOF
 plugins {
-    id 'java'
+    ${source_language:+id("${source_language}")}
+    id("org.springframework.boot") version "${escapedBootVersion}"
+    id("io.spring.dependency-management") version "${escapedDmVersion}"
+}
+
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(${javaVersion}))
+    }
+}
+
+dependencies {
+${depsBlock}
+}
+
+tasks.withType<Test> {
+    useJUnitPlatform()
+}
+EOF
+        else
+            # 生成子模块 build.gradle
+            cat > "${modDir}/${module_build_file}" <<EOF
+plugins {
+    id '${source_language}'
     id 'org.springframework.boot' version '${escapedBootVersion}'
     id 'io.spring.dependency-management' version '${escapedDmVersion}'
 }
@@ -186,10 +237,11 @@ test {
     useJUnitPlatform()
 }
 EOF
+        fi
         write_module_application_files "$mod" "$modDir"
     else
         create_module_scaffold_common "${modDir}" "${packageName}" "${mod}" "${configFormat}" "${modulePkg}"
-        cat > "${modDir}/build.gradle" <<EOF
+        cat > "${modDir}/${module_build_file}" <<EOF
 // Aggregator module mapped from module-packaging=pom.
 // Intentionally no java/spring-boot plugin and no dependencies.
 EOF
@@ -210,9 +262,12 @@ EOF
 # -----------------------------------------------------------------------------
 ensure_settings_include_absent() {
     local includePath="$1"
-    local settingsFile="${projectName}/settings.gradle"
+    local settingsFile="${projectName}/${root_settings_file}"
     local settingsContent
     local includeLine="include '${includePath}'"
+    if [[ "$gradle_dsl" == "kotlin" ]]; then
+        includeLine="include(\"${includePath}\")"
+    fi
 
     if [ ! -f "$settingsFile" ]; then
         echo "settings.gradle 不存在: ${settingsFile}"
@@ -236,8 +291,11 @@ ensure_settings_include_absent() {
 # -----------------------------------------------------------------------------
 append_module_to_settings_gradle() {
     local includePath="$1"
-    local settingsFile="${projectName}/settings.gradle"
+    local settingsFile="${projectName}/${root_settings_file}"
     local includeLine="include '${includePath}'"
+    if [[ "$gradle_dsl" == "kotlin" ]]; then
+        includeLine="include(\"${includePath}\")"
+    fi
 
     if [ ! -f "$settingsFile" ]; then
         echo "settings.gradle 不存在: ${settingsFile}"
@@ -276,18 +334,41 @@ else
     if [ -n "$subModules" ]; then
         while IFS= read -r mod; do
             [ -z "$mod" ] && continue
-            includesGradle+="include ':${mod}'"$'\n'
+            if [[ "$gradle_dsl" == "kotlin" ]]; then
+                includesGradle+="include(\":${mod}\")"$'\n'
+            else
+                includesGradle+="include ':${mod}'"$'\n'
+            fi
         done < <(iterate_csv_items_common "$subModules")
     fi
 
     # 生成 settings.gradle
-    cat > "${projectName}/settings.gradle" <<EOF
+    if [[ "$gradle_dsl" == "kotlin" ]]; then
+        cat > "${projectName}/${root_settings_file}" <<EOF
+rootProject.name = "${escapedProjectName}"
+${includesGradle}
+EOF
+    else
+        cat > "${projectName}/${root_settings_file}" <<EOF
 rootProject.name = '${escapedProjectName}'
 ${includesGradle}
 EOF
+    fi
 
     # 生成根 build.gradle
-    cat > "${projectName}/build.gradle" <<EOF
+    if [[ "$gradle_dsl" == "kotlin" ]]; then
+        cat > "${projectName}/${root_build_file}" <<EOF
+allprojects {
+    group = "${escapedGroupId}"
+    version = "${escapedProjectVersion}"
+
+    repositories {
+        mavenCentral()
+    }
+}
+EOF
+    else
+        cat > "${projectName}/${root_build_file}" <<EOF
 allprojects {
     group = '${escapedGroupId}'
     version = '${escapedProjectVersion}'
@@ -297,6 +378,7 @@ allprojects {
     }
 }
 EOF
+    fi
 
     # 生成子模块
     if [ -n "$subModules" ]; then

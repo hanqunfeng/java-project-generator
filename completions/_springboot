@@ -85,15 +85,18 @@ local cmd="${words[2]}"
 local create_long_opts module_add_long_opts deps_list_long_opts deps_preview_long_opts
 create_long_opts=(
   --help --dry-run --name= --boot= --type= --packaging= --modules= --config=
-  --java= --group= --artifact= --artifact-version= --desc= --pkg= --deps=
+  --java= --language= --gradle-dsl= --group= --artifact= --artifact-version= --desc= --pkg= --deps=
 )
 module_add_long_opts=(
   --help --dry-run --name= --module= --module-packaging= --module-path= --boot=
-  --type= --packaging= --config= --java= --group= --artifact= --artifact-version=
+  --type= --packaging= --config= --java= --language= --gradle-dsl= --group= --artifact= --artifact-version=
   --desc= --pkg= --deps=
 )
-deps_list_long_opts=(--help --boot= --output=)
-deps_preview_long_opts=(--help --deps= --boot= --type= --java=)
+module_list_long_opts=(--help --name= --type= --module-path=)
+module_remove_long_opts=(--help --dry-run --name= --type= --module= --module-path=)
+deps_list_long_opts=(--help --boot= --output= --refresh)
+deps_preview_long_opts=(--help --deps= --boot= --type= --java= --language= --gradle-dsl=)
+deps_search_long_opts=(--help --query= --boot= --refresh)
 
 case "$cmd" in
   create)
@@ -102,6 +105,8 @@ case "$cmd" in
       --packaging=*) _springboot_complete_assignment_values "--packaging=" jar war pom; return ;;
       --config=*) _springboot_complete_assignment_values "--config=" properties yaml; return ;;
       --java=*) _springboot_complete_assignment_values "--java=" 17 21 25; return ;;
+      --language=*) _springboot_complete_assignment_values "--language=" java kotlin groovy; return ;;
+      --gradle-dsl=*) _springboot_complete_assignment_values "--gradle-dsl=" groovy kotlin; return ;;
     esac
     if [[ -z "${words[CURRENT]}" || "${words[CURRENT]}" == --* ]]; then
       local cur_word
@@ -120,6 +125,8 @@ case "$cmd" in
       '--modules=[子模块列表，逗号分隔]:modules:' \
       '--config=[配置文件格式]:config:(properties yaml)' \
       '--java=[Java 版本]:java:(17 21 25)' \
+      '--language=[代码语言]:language:(java kotlin groovy)' \
+      '--gradle-dsl=[Gradle DSL]:gradle-dsl:(groovy kotlin)' \
       '--group=[Group Id]:group:' \
       '--artifact=[Artifact Id]:artifact:' \
       '--artifact-version=[项目版本]:artifact-version:' \
@@ -129,7 +136,7 @@ case "$cmd" in
     ;;
   module)
     if (( CURRENT == 3 )); then
-      _arguments '2:subcommand:(add)'
+      _arguments '2:subcommand:(add list remove)'
       return
     fi
     local module_sub="${words[3]}"
@@ -141,6 +148,8 @@ case "$cmd" in
           --module-packaging=*) _springboot_complete_assignment_values "--module-packaging=" jar pom; return ;;
           --config=*) _springboot_complete_assignment_values "--config=" properties yaml; return ;;
           --java=*) _springboot_complete_assignment_values "--java=" 17 21 25; return ;;
+          --language=*) _springboot_complete_assignment_values "--language=" java kotlin groovy; return ;;
+          --gradle-dsl=*) _springboot_complete_assignment_values "--gradle-dsl=" groovy kotlin; return ;;
         esac
         if [[ -z "${words[CURRENT]}" || "${words[CURRENT]}" == --* ]]; then
           local cur_word
@@ -161,6 +170,8 @@ case "$cmd" in
           '--packaging=[打包方式，仅支持 pom]:packaging:(pom)' \
           '--config=[配置文件格式]:config:(properties yaml)' \
           '--java=[Java 版本]:java:(17 21 25)' \
+          '--language=[代码语言]:language:(java kotlin groovy)' \
+          '--gradle-dsl=[Gradle DSL]:gradle-dsl:(groovy kotlin)' \
           '--group=[Group Id]:group:' \
           '--artifact=[Artifact Id]:artifact:' \
           '--artifact-version=[项目版本]:artifact-version:' \
@@ -168,14 +179,44 @@ case "$cmd" in
           "--pkg=[根包名（默认同 --group，自动把 '-' 转 '_'）]:pkg:" \
           '--deps=[依赖 ID 列表，逗号分隔]:deps:'
         ;;
+      list)
+        if [[ -z "${words[CURRENT]}" || "${words[CURRENT]}" == --* ]]; then
+          local cur_word
+          cur_word="${words[CURRENT]}"
+          _springboot_filter_used_opts "${module_list_long_opts[@]}"
+          compadd -Q -S '' -- ${(M)reply:#${cur_word}*}
+          return
+        fi
+        _arguments -s \
+          '--help[显示 module list 命令帮助]' \
+          '--name=[目标项目名]:name:' \
+          '--type=[构建工具]:type:(maven gradle)' \
+          '--module-path=[父模块路径]:module-path:'
+        ;;
+      remove)
+        if [[ -z "${words[CURRENT]}" || "${words[CURRENT]}" == --* ]]; then
+          local cur_word
+          cur_word="${words[CURRENT]}"
+          _springboot_filter_used_opts "${module_remove_long_opts[@]}"
+          compadd -Q -S '' -- ${(M)reply:#${cur_word}*}
+          return
+        fi
+        _arguments -s \
+          '--help[显示 module remove 命令帮助]' \
+          '--dry-run[仅打印执行计划]' \
+          '--name=[目标项目名]:name:' \
+          '--type=[构建工具]:type:(maven gradle)' \
+          '--module=[子模块名]:module:' \
+          '--module-path=[父模块路径]:module-path:'
+        ;;
       *)
-        _arguments '2:subcommand:(add)'
+        _arguments '2:subcommand:(add list remove)'
         ;;
     esac
     ;;
   deps)
     if (( CURRENT == 3 )); then
-      _arguments '2:subcommand:(list preview)'
+      _arguments '2:subcommand:(list preview search)'
       return
     fi
     local deps_sub="${words[3]}"
@@ -200,6 +241,8 @@ case "$cmd" in
         case "${words[CURRENT]}" in
           --type=*) _springboot_complete_assignment_values "--type=" maven gradle; return ;;
           --java=*) _springboot_complete_assignment_values "--java=" 17 21 25; return ;;
+          --language=*) _springboot_complete_assignment_values "--language=" java kotlin groovy; return ;;
+          --gradle-dsl=*) _springboot_complete_assignment_values "--gradle-dsl=" groovy kotlin; return ;;
         esac
         if [[ -z "${words[CURRENT]}" || "${words[CURRENT]}" == --* ]]; then
           local cur_word
@@ -213,10 +256,26 @@ case "$cmd" in
           '--deps=[依赖 ID 列表，逗号分隔]:deps:' \
           '--boot=[Spring Boot 版本]:boot:' \
           '--type=[构建工具]:type:(maven gradle)' \
-          '--java=[Java 版本]:java:(17 21 25)'
+          '--java=[Java 版本]:java:(17 21 25)' \
+          '--language=[代码语言]:language:(java kotlin groovy)' \
+          '--gradle-dsl=[Gradle DSL]:gradle-dsl:(groovy kotlin)'
+        ;;
+      search)
+        if [[ -z "${words[CURRENT]}" || "${words[CURRENT]}" == --* ]]; then
+          local cur_word
+          cur_word="${words[CURRENT]}"
+          _springboot_filter_used_opts "${deps_search_long_opts[@]}"
+          compadd -Q -S '' -- ${(M)reply:#${cur_word}*}
+          return
+        fi
+        _arguments -s \
+          '--help[显示 deps search 命令帮助]' \
+          '--query=[关键词]:query:' \
+          '--boot=[Spring Boot 版本]:boot:' \
+          '--refresh[强制刷新缓存]'
         ;;
       *)
-        _arguments '2:subcommand:(list preview)'
+        _arguments '2:subcommand:(list preview search)'
         ;;
     esac
     ;;

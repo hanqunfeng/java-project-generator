@@ -25,3 +25,7 @@ fi
 shellcheck -x -e SC1090,SC2154,SC2034 springboot lib/*.sh
 shellcheck -e SC2034,SC2207 completions/springboot.bash
 bats test/springboot.bats
+
+if [[ "${RUN_INTEGRATION_TESTS:-0}" == "1" ]]; then
+    bats test/integration.bats
+fi
