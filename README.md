@@ -139,7 +139,6 @@ springboot <command> [options]
 - `NO_COLOR`：关闭彩色输出；设置为任意非空值即可（常见用法：`NO_COLOR=1`）
 - `INITIALIZR_BASE_URL`：覆盖 Spring Initializr 基础地址（默认 `https://start.spring.io`）
 - `DEPS_CACHE_TTL_SECONDS`：依赖缓存过期秒数（默认 `86400`）
-- `SPRINGBOOT_LANG`：帮助信息语言（预留，默认中文）
 - `GRADLE_DM_PLUGIN_VERSION`：覆盖 Gradle 多模块模板中的 `io.spring.dependency-management` 插件版本，默认 `1.1.7`
   - 示例：`GRADLE_DM_PLUGIN_VERSION=1.1.6 springboot create --name=myproject --type=gradle --packaging=pom --modules=api`
 - `EXIT_PARAM` / `EXIT_NETWORK` / `EXIT_FS` / `EXIT_DEP`：子脚本在“脱离入口脚本单独执行/调试”时可通过环境变量兜底退出码（入口 `springboot` 正常调用时使用内置退出码）
