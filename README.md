@@ -35,7 +35,7 @@ java-project-generator/
 ## 工作原理
 
 - `springboot` 负责统一解析参数、校验参数、打印配置
-- 支持 `INITIALIZR_BASE_URL` 覆盖默认 `https://start.spring.io`
+- 支持 `INITIALIZR_BASE_URL` 覆盖默认 Initializr 地址（须兼容官方 API；当前仅官方可用，见下文环境变量说明）
 - 根据 `--packaging` 调度：
   - `jar` / `war` -> `lib/single.sh`
   - `pom` + `--type=maven` -> `lib/multi-maven.sh`
@@ -51,7 +51,7 @@ java-project-generator/
 - `pandoc`（`springboot deps list --output=web` 渲染 HTML）
 - `glow`（`springboot deps list --output=terminal` 终端渲染，缺失时可直接看缓存文件）
 - `mvn` / `xmllint` / `xmlstarlet`（Maven module add 坐标解析，按回退链任选其一）
-- 网络访问 Spring Initializr（默认 `https://start.spring.io`，可通过 `INITIALIZR_BASE_URL` 覆盖）
+- 网络访问 Spring Initializr（默认 `https://start.spring.io`；`INITIALIZR_BASE_URL` 仅作兼容官方 API 的扩展预留，见下文）
 - 说明：脚本会自动探测 Spring Initializr 接口中 Boot 版本参数名（`bootVersion` / `boot-version`），并分别兼容 `metadata/client` 与 `starter.zip` 请求
 
 ## 兼容矩阵（建议）
@@ -178,14 +178,74 @@ springboot <command> [options]
   - `springboot boot list`：查询当前 Initializr 支持的 Spring Boot 版本
 - 顶级命令与子命令均支持 `--help` / `-h`
 - `--deps` 仅支持 Spring Boot 官方 Initializr 提供的依赖 ID（如 `web`、`data-jpa`、`mysql`）
-- 可先执行 `springboot boot list` 查看可创建的 Boot 版本，再执行 `springboot deps list --boot=<版本>` 查看可用依赖 ID
+- 可创建的 Boot 版本随官网 Initializr 升级而变化，**使用前请先** `springboot boot list` 确认；再按需 `springboot deps list --boot=<版本>` 查看可用依赖 ID（详见下文「Spring Boot 版本说明」）
 - `create` / `module add`：未指定 `--boot` 时使用当前 Initializr 默认版本；若指定版本不在官方列表中，会提示已不再支持
 - 输出默认带彩色提示（成功/警告/错误）；如需关闭可设置环境变量 `NO_COLOR=1`
+
+### Spring Boot 版本说明
+
+本工具能创建的 Spring Boot 版本 **完全跟随** 官方 Initializr（`https://start.spring.io`）当前提供的列表，会随官网升级而增减，**没有内置固定版本矩阵**。
+
+发布前 / 使用前请先确认：
+
+```bash
+springboot boot list
+# 可选：强制刷新缓存
+springboot boot list --refresh
+```
+
+例如某时刻官方可能只保留 Boot 4.x，而不再提供 3.x；此时 `--boot=3.5.x` 会被拒绝。
+
+#### 需要历史版本时怎么做
+
+官方列表里没有的旧版本，**不能**再通过 Initializr 直接生成。常见做法：
+
+1. 用本工具按当前官方支持的版本创建项目（可带上所需 `--deps`）
+2. 再手工把 `pom.xml` / `build.gradle` 中的 Boot 版本改成目标历史版本
+3. 若创建时带了依赖，跨大版本改号后，**通常还要核对并修改依赖坐标**（Initializr 的依赖 ID 可能仍叫 `web`，但落到构建文件里的 `artifactId` 会随 Boot 大版本变化）
+
+#### 示例：Boot 3 → Boot 4 的 Web Starter 名称不同
+
+Initializr 依赖 ID 在两边都可以是 `web`，但生成到 Maven 中的坐标不同：
+
+**Spring Boot 3.x**（历史常见写法）：
+
+```xml
+<dependency>
+  <groupId>org.springframework.boot</groupId>
+  <artifactId>spring-boot-starter-web</artifactId>
+</dependency>
+```
+
+**Spring Boot 4.x**（当前官网生成结果）：
+
+```xml
+<dependency>
+  <groupId>org.springframework.boot</groupId>
+  <artifactId>spring-boot-starter-webmvc</artifactId>
+</dependency>
+
+<!-- 测试依赖也会跟着变，例如： -->
+<dependency>
+  <groupId>org.springframework.boot</groupId>
+  <artifactId>spring-boot-starter-webmvc-test</artifactId>
+  <scope>test</scope>
+</dependency>
+```
+
+因此：若用本工具按 Boot 4 生成后再手工改回 Boot 3，需要把 `spring-boot-starter-webmvc` 改回 `spring-boot-starter-web`（并检查测试依赖等）；反过来从 Boot 3 升到 4 时同理。其它 starter 也可能有类似重命名，改大版本后请对照目标版本的依赖说明或用 `springboot deps preview --boot=<仍被官方支持的版本> --deps=...` 核对坐标。
 
 ### 环境变量（可选）
 
 - `NO_COLOR`：关闭彩色输出；设置为任意非空值即可（常见用法：`NO_COLOR=1`）
 - `INITIALIZR_BASE_URL`：覆盖 Spring Initializr 基础地址（默认 `https://start.spring.io`）
+  - **要求**：必须是兼容 [Spring Initializr](https://github.com/spring-io/initializr) HTTP API 的 base URL（脚本会访问 `{BASE}/metadata/client`、`{BASE}/starter.zip` 等）
+  - **当前状态**：仅官方 `https://start.spring.io` 为已验证可用目标；该变量用于预留扩展（例如将来接入自建/内网 Initializr）
+  - **不支持**：阿里云 `https://start.aliyun.com` 等非官方站点——即便页面可打开，也常因路径/风控/元数据差异无法作为本工具的 Initializr 后端
+  - 示例（保持默认即可，一般无需设置）：
+    ```bash
+    export INITIALIZR_BASE_URL=https://start.spring.io
+    ```
 - `DEPS_CACHE_TTL_SECONDS`：依赖缓存过期秒数（默认 `86400`）
 - `GRADLE_DM_PLUGIN_VERSION`：覆盖 Gradle 多模块模板中的 `io.spring.dependency-management` 插件版本，默认 `1.1.7`
   - 示例：`GRADLE_DM_PLUGIN_VERSION=1.1.6 springboot create --name=myproject --type=gradle --packaging=pom --modules=api`
@@ -437,7 +497,7 @@ springboot deps search --query=redis --boot=3.5.14
 
 - 单模块创建失败并提示下载失败？
   - 先执行 `springboot boot list` 确认当前 Initializr 支持的 Boot 版本
-  - 检查网络是否可访问 `https://start.spring.io`（或你设置的 `INITIALIZR_BASE_URL`）
+  - 检查网络是否可访问 `https://start.spring.io`（若自定义了 `INITIALIZR_BASE_URL`，须指向兼容官方 Initializr API 的服务，当前仅官方已验证）
   - 检查本机是否安装并可用 `curl` / `unzip`
   - 若报 400 / 版本无效，改用 `boot list` 中的版本，例如 `--boot=4.0.7`
 
@@ -496,4 +556,4 @@ CI 工作流：`.github/workflows/ci.yml`（shellcheck + bats）
 
 ## 后续扩展（规划中）
 
-- 提供离线依赖镜像模式（缓存元数据与模板片段；当前可通过 `INITIALIZR_BASE_URL` 指向镜像站点）
+- 提供离线依赖镜像模式（缓存元数据与模板片段）；`INITIALIZR_BASE_URL` 已预留用于接入兼容官方 API 的自建/内网 Initializr，当前仅官方 `https://start.spring.io` 可用
