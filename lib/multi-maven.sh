@@ -406,6 +406,8 @@ print_maven_plan() {
         plan_echo "FLOW" "输出完成提示: Maven 子模块追加完成: ${mod}"
     else
         # 子模块 parent.version 统一引用 ${revision}，与父 POM 的 CI-friendly 版本对齐
+        # 故意用单引号写入字面量 ${revision}，禁止 shell 展开
+        # shellcheck disable=SC2016
         parentVersion='${revision}'
         plan_echo "WRITE" "创建父项目目录: '${projectName}'"
         plan_echo "WRITE" "生成项目忽略文件: '${projectName}/.gitignore'"
@@ -591,6 +593,8 @@ if [[ "$action" == "add-module" ]]; then
     echo "Maven 子模块追加完成: ${mod} (父模块路径: ${modulePath:-<项目根>}, packaging=${modulePackaging})"
 else
     # 子模块 parent.version 统一引用 ${revision}
+    # 故意用单引号写入字面量 ${revision}，禁止 shell 展开
+    # shellcheck disable=SC2016
     parentVersion='${revision}'
     escapedGroupId="$(xml_escape "$groupId")"
     escapedArtifactId="$(xml_escape "$artifactId")"
