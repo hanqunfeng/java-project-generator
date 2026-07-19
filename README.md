@@ -6,6 +6,45 @@
 - 多模块 Gradle 项目（`pom` 模式，本地生成父子模块结构）
 - 已有 Maven/Gradle 多模块项目追加子模块（含嵌套路径）
 
+## 为什么用本工具（对比 IDEA）
+
+相对 IntelliJ IDEA「New Project → Spring Boot」向导，本工具更适合需要 **可复现、可脚本化、多模块、不绑特定 IDE** 的场景。常见组合是：本工具生成骨架，再用 IDEA / VS Code / Cursor 打开开发。
+
+### 适合用本工具的理由
+
+1. **可脚本化、可复现**：一条命令即可写入 shell 历史、Makefile 或 CI，同事与流水线拿到的结构一致；IDEA 点选流程难版本化。
+2. **终端 / 无 GUI 也能建**：SSH、容器、精简环境不必开 IDE。
+3. **多模块更「开箱」**：`packaging=pom` + `--modules`，以及已有工程的 `module add|list|remove`（含嵌套路径），比向导更偏批量搭父子结构。
+4. **依赖可先查再写**：`boot list` / `deps list|search|preview` 能在创建前核对版本与坐标。
+5. **与官网 Initializr 同源、编辑器无关**：不绑定 IntelliJ。
+6. **`--dry-run` 可预览**：不落盘也能看清将生成什么。
+
+### 对比一览
+
+| 维度 | 本工具 | IDEA 创建向导 |
+| --- | --- | --- |
+| 交互方式 | CLI，适合脚本 / CI | GUI，新手更直观 |
+| 可复现性 | 命令即可复现 | 依赖点选，难自动化 |
+| 单模块 jar/war | 调官方 Initializr，接近 start.spring.io | 同样基于 Initializr，依赖勾选更直观 |
+| 多模块 / 追加子模块 | 本地模板，支持批量与维护子模块 | 多靠手工或插件 |
+| 运行与调试配置 | 不生成 IDE Run Configuration | 创建后常带好运行、模块配置 |
+| Boot 版本 | 仅当前官网列表；历史版需手工改 | 同样受 Initializr 约束，UI 里更易看到可选版本 |
+| 依赖发现 | 需 `deps list` / 文档 | 勾选搜索更友好 |
+| 环境依赖 | bash、curl、python3、网络等 | 装好 IDEA 即可（仍需能访问 Initializr） |
+| 编辑器绑定 | 无 | 绑定 IntelliJ 生态 |
+
+### 相对 IDEA 的劣势
+
+1. **学习成本**：要记子命令与参数，不如向导「点一点」。
+2. **不做 IDE 集成**：不配置 Run/Debug，不自动设置 Spring Facet。
+3. **能力边界清晰**：版本跟官网走；复杂企业模板或付费脚手架覆盖不到。
+4. **跨大版本依赖要自己盯**：例如 Boot 3 的 `spring-boot-starter-web` 与 Boot 4 的 `spring-boot-starter-webmvc`，改版本后可能需手改坐标（见下文「Spring Boot 版本说明」）。
+
+### 怎么选
+
+- 要 **可重复、多模块、终端/CI、不绑 IDEA** → 用本工具。
+- 要 **可视化勾依赖、建完立刻在 IDEA 里跑** → 用 IDEA（或本工具建完再打开工程）。
+
 ## 目录结构
 
 ```text
