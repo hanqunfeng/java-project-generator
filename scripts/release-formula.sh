@@ -16,6 +16,7 @@
 # 用法:
 #   bash scripts/release-formula.sh <patch|minor|major> [选项]
 #   bash scripts/release-formula.sh --version 1.2.0 [选项]
+#   bash scripts/release-formula.sh --resume 1.0.6 [选项]   # tag 已推送后续跑
 #
 # 示例:
 #   # 当前最新 tag 为 v1.0.5 时：
@@ -24,6 +25,9 @@
 #   bash scripts/release-formula.sh major    # → v2.0.0
 #   bash scripts/release-formula.sh --version 1.2.0
 #
+#   # tag 已推送但 formula/tap 未完成时：
+#   bash scripts/release-formula.sh --resume 1.0.6
+#
 #   # 仅预览将要执行的操作，不真正改动
 #   bash scripts/release-formula.sh patch --dry-run
 #
@@ -31,7 +35,7 @@
 #   bash scripts/release-formula.sh patch --skip-check --yes
 #
 # 前置条件:
-#   - 主仓库工作区干净（无未提交变更）
+#   - 主仓库工作区干净（无未提交变更；--resume 时允许已改 formula）
 #   - 已配置 origin 远程，且有 push 权限
 #   - 本地已存在 tap：cd "$(brew --repo hanqunfeng/homebrew-tap)"
 #   - 已安装：git、curl、shasum/sha256sum、brew、ruby
@@ -62,6 +66,7 @@ FORMULA_FILE="formula/java-project-generator.rb"
 
 BUMP_TYPE=""          # patch | minor | major（与 --version 二选一）
 EXPLICIT_VERSION=""   # 通过 --version 直接指定，不带 v 前缀
+RESUME_MODE=0         # 1 = 续跑：跳过 bump/tag，从计算 sha256 起继续
 DRY_RUN=0             # 1 = 只打印计划，不执行写操作
 SKIP_CHECK=0          # 1 = 跳过 scripts/check.sh
 SKIP_TAP_AUDIT=0      # 1 = 跳过 brew style / brew audit
@@ -72,7 +77,8 @@ PUSH_REMOTE=1         # 1 = 推送主仓库与 tap；0 = 只做本地提交与�
 # 工具函数
 # ---------------------------------------------------------------------------
 
-log()  { printf '==> %s\n' "$*"; }
+# 日志一律走 stderr，避免被 $(...) 命令替换捕获（污染返回值）
+log()  { printf '==> %s\n' "$*" >&2; }
 warn() { printf 'WARNING: %s\n' "$*" >&2; }
 die()  { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
@@ -231,6 +237,11 @@ compute_archive_sha256() {
     fi
 
     rm -f "$tmp_archive"
+
+    # 仅向 stdout 输出纯 hash，供 $(...) 捕获；其它日志已走 stderr
+    if [[ ! "$hash" =~ ^[0-9a-f]{64}$ ]]; then
+        die "计算出的 sha256 非法: ${hash}"
+    fi
     printf '%s\n' "$hash"
 }
 
@@ -283,6 +294,12 @@ while [[ $# -gt 0 ]]; do
             EXPLICIT_VERSION="$(normalize_version "$2")"
             shift 2
             ;;
+        --resume)
+            [[ $# -ge 2 ]] || die "--resume 需要版本号参数，例如: --resume 1.0.6"
+            RESUME_MODE=1
+            EXPLICIT_VERSION="$(normalize_version "$2")"
+            shift 2
+            ;;
         --dry-run)
             DRY_RUN=1
             shift
@@ -317,10 +334,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$BUMP_TYPE" && -z "$EXPLICIT_VERSION" ]]; then
-    die "请指定 bump 类型（patch|minor|major）或 --version X.Y.Z"
+    die "请指定 bump 类型（patch|minor|major）、--version X.Y.Z 或 --resume X.Y.Z"
 fi
 if [[ -n "$BUMP_TYPE" && -n "$EXPLICIT_VERSION" ]]; then
-    die "不能同时指定 bump 类型与 --version"
+    die "不能同时指定 bump 类型与 --version/--resume"
 fi
 
 # ---------------------------------------------------------------------------
@@ -338,16 +355,29 @@ fi
 NEW_TAG="v${NEW_VERSION}"
 ARCHIVE_URL="https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/archive/refs/tags/${NEW_TAG}.tar.gz"
 
-# 版本只能前进（允许 --version 跳到任意更新版本，但不允许回退）
-if [[ "$(printf '%s\n%s\n' "$CURRENT_VERSION" "$NEW_VERSION" | sort -V | head -n 1)" == "$NEW_VERSION" \
-    && "$CURRENT_VERSION" != "$NEW_VERSION" ]]; then
-    die "新版本 ${NEW_VERSION} 不能低于当前版本 ${CURRENT_VERSION}"
-fi
-if [[ "$CURRENT_VERSION" == "$NEW_VERSION" ]]; then
-    die "新版本与当前版本相同: ${NEW_VERSION}"
+if [[ "$RESUME_MODE" -eq 1 ]]; then
+    # 续跑：要求本地已有该 tag（通常已 push）
+    if [[ "$DRY_RUN" -eq 0 ]] && ! git rev-parse -q --verify "refs/tags/${NEW_TAG}" >/dev/null 2>&1; then
+        die "续跑失败：本地不存在 tag ${NEW_TAG}。请确认 tag 已创建。"
+    fi
+else
+    # 版本只能前进（允许 --version 跳到任意更新版本，但不允许回退）
+    if [[ "$(printf '%s\n%s\n' "$CURRENT_VERSION" "$NEW_VERSION" | sort -V | head -n 1)" == "$NEW_VERSION" \
+        && "$CURRENT_VERSION" != "$NEW_VERSION" ]]; then
+        die "新版本 ${NEW_VERSION} 不能低于当前版本 ${CURRENT_VERSION}"
+    fi
+    if [[ "$CURRENT_VERSION" == "$NEW_VERSION" ]]; then
+        die "新版本与当前版本相同: ${NEW_VERSION}"
+    fi
 fi
 
 TAP_PATH="$(resolve_tap_repo)"
+
+if [[ "$RESUME_MODE" -eq 1 ]]; then
+    RELEASE_MODE_LABEL="resume"
+else
+    RELEASE_MODE_LABEL="full"
+fi
 
 # ---------------------------------------------------------------------------
 # 发布计划摘要
@@ -361,6 +391,7 @@ cat <<EOF
   当前版本 : ${CURRENT_VERSION}
   新版本   : ${NEW_VERSION}  (tag: ${NEW_TAG})
   bump     : ${BUMP_TYPE:-explicit}
+  模式     : ${RELEASE_MODE_LABEL}
   源码包   : ${ARCHIVE_URL}
   主仓库   : ${PROJECT_ROOT}
   Tap 仓库 : ${TAP_PATH}
@@ -374,62 +405,50 @@ EOF
 confirm "确认按上述计划发布？" || die "已取消"
 
 # ---------------------------------------------------------------------------
-# 1. 前置校验
+# 1. 前置校验 / 2-5. 全量发布路径（bump → tag → push）
 # ---------------------------------------------------------------------------
 
-if [[ "$DRY_RUN" -eq 0 ]]; then
-    assert_clean_worktree
-    assert_tag_available "$NEW_TAG"
-fi
-
-# ---------------------------------------------------------------------------
-# 2. 发布前检查（shellcheck + bats）
-# ---------------------------------------------------------------------------
-
-if [[ "$SKIP_CHECK" -eq 0 ]]; then
-    log "运行 scripts/check.sh ..."
-    run bash scripts/check.sh
-else
-    warn "已跳过 scripts/check.sh"
-fi
-
-# ---------------------------------------------------------------------------
-# 3. 更新 SCRIPT_VERSION（必须在打 tag 之前，保证压缩包内版本正确）
-# ---------------------------------------------------------------------------
-
-log "更新 springboot SCRIPT_VERSION → ${NEW_VERSION}"
-if [[ "$DRY_RUN" -eq 0 ]]; then
-    update_script_version "$NEW_VERSION"
-fi
-
-# ---------------------------------------------------------------------------
-# 4. 提交版本号变更并创建 tag
-# ---------------------------------------------------------------------------
-
-log "提交主仓库版本变更并创建 tag ${NEW_TAG}"
-if [[ "$DRY_RUN" -eq 0 ]]; then
-    git add springboot
-    git commit -m "chore: bump version to ${NEW_VERSION}"
-    git tag -a "$NEW_TAG" -m "Release ${NEW_TAG}"
-else
-    run git add springboot
-    run git commit -m "chore: bump version to ${NEW_VERSION}"
-    run git tag -a "$NEW_TAG" -m "Release ${NEW_TAG}"
-fi
-
-# ---------------------------------------------------------------------------
-# 5. 推送主仓库 commit + tag（GitHub 才能提供 archive）
-# ---------------------------------------------------------------------------
-
-if [[ "$PUSH_REMOTE" -eq 1 ]]; then
-    log "推送主仓库到 origin（含 tag）"
-    run git push origin HEAD
-    run git push origin "$NEW_TAG"
-else
-    warn "已跳过 git push（--no-push）。后续无法从 GitHub 下载 archive，将中止。"
+if [[ "$RESUME_MODE" -eq 0 ]]; then
     if [[ "$DRY_RUN" -eq 0 ]]; then
-        die "使用 --no-push 时无法完成 sha256 计算与 tap 发布。本地已创建 commit 与 tag ${NEW_TAG}。"
+        assert_clean_worktree
+        assert_tag_available "$NEW_TAG"
     fi
+
+    if [[ "$SKIP_CHECK" -eq 0 ]]; then
+        log "运行 scripts/check.sh ..."
+        run bash scripts/check.sh
+    else
+        warn "已跳过 scripts/check.sh"
+    fi
+
+    log "更新 springboot SCRIPT_VERSION → ${NEW_VERSION}"
+    if [[ "$DRY_RUN" -eq 0 ]]; then
+        update_script_version "$NEW_VERSION"
+    fi
+
+    log "提交主仓库版本变更并创建 tag ${NEW_TAG}"
+    if [[ "$DRY_RUN" -eq 0 ]]; then
+        git add springboot
+        git commit -m "chore: bump version to ${NEW_VERSION}"
+        git tag -a "$NEW_TAG" -m "Release ${NEW_TAG}"
+    else
+        run git add springboot
+        run git commit -m "chore: bump version to ${NEW_VERSION}"
+        run git tag -a "$NEW_TAG" -m "Release ${NEW_TAG}"
+    fi
+
+    if [[ "$PUSH_REMOTE" -eq 1 ]]; then
+        log "推送主仓库到 origin（含 tag）"
+        run git push origin HEAD
+        run git push origin "$NEW_TAG"
+    else
+        warn "已跳过 git push（--no-push）。后续无法从 GitHub 下载 archive，将中止。"
+        if [[ "$DRY_RUN" -eq 0 ]]; then
+            die "使用 --no-push 时无法完成 sha256 计算与 tap 发布。本地已创建 commit 与 tag ${NEW_TAG}。"
+        fi
+    fi
+else
+    log "续跑模式：跳过 bump / check / tag / push，从计算 sha256 继续"
 fi
 
 # ---------------------------------------------------------------------------

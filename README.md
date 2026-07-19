@@ -66,6 +66,43 @@ java-project-generator/
 
 ## 安装与全局命令配置
 
+### 方式一：Homebrew（推荐）
+
+```bash
+brew install hanqunfeng/tap/java-project-generator
+```
+
+或分两步：
+
+```bash
+brew tap hanqunfeng/tap
+brew install java-project-generator
+```
+
+安装后请自行安装 **python3**（formula 不会自动安装，生成项目与依赖相关功能需要）：
+
+```bash
+brew install python@3.13
+```
+
+验证：
+
+```bash
+springboot --help
+springboot --version
+```
+
+升级 / 卸载：
+
+```bash
+brew update && brew upgrade java-project-generator
+brew uninstall java-project-generator
+```
+
+Homebrew 会一并安装 Bash / Zsh 补全；更多说明见 [`formula/README.md`](formula/README.md)。
+
+### 方式二：从源码加入 PATH
+
 下文用 `$REPO_ROOT` 表示本仓库根目录（clone 后的 `java-project-generator` 路径）。复制命令前请替换为实际路径，例如：
 
 ```bash
@@ -92,6 +129,8 @@ springboot create --name=mydemo
 ```
 
 ## Shell 自动补全
+
+若通过 Homebrew 安装，Bash / Zsh 补全已自动安装，一般无需再配置。从源码使用时，按下方加载即可。
 
 ### Bash
 
