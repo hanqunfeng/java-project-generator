@@ -591,7 +591,7 @@ bats test/springboot.bats
 - Maven 坐标解析回退链（`mvn/xmllint/xmlstarlet` 不可用时的 `awk` 回退）
 - 多层 `module-path` 挂载行为（嵌套父模块追加子模块）
 
-CI 工作流：`.github/workflows/ci.yml`（shellcheck + bats）
+CI 工作流：`.github/workflows/ci.yml`（推送 `v*` tag 时运行 shellcheck + bats）
 
 ## 后续扩展（规划中）
 
