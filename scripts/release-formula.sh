@@ -195,6 +195,8 @@ update_script_version() {
         }
     }
     ' springboot > "$tmp_file"
+    # mktemp 默认不可执行；mv 覆盖后会丢掉原 springboot 的 +x，必须显式恢复
+    chmod +x "$tmp_file"
     mv "$tmp_file" springboot
 }
 
