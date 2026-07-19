@@ -136,9 +136,11 @@ springboot <command> [options]
   - `springboot create`：创建项目（单模块或多模块）
   - `springboot module add|list|remove`：维护多模块项目
   - `springboot deps list|preview|search`：依赖列表、声明预览与关键词搜索
+  - `springboot boot list`：查询当前 Initializr 支持的 Spring Boot 版本
 - 顶级命令与子命令均支持 `--help` / `-h`
 - `--deps` 仅支持 Spring Boot 官方 Initializr 提供的依赖 ID（如 `web`、`data-jpa`、`mysql`）
-- 可先执行 `springboot deps list --boot=<版本>` 查看当前 Boot 版本可用依赖 ID
+- 可先执行 `springboot boot list` 查看可创建的 Boot 版本，再执行 `springboot deps list --boot=<版本>` 查看可用依赖 ID
+- `create` / `module add`：未指定 `--boot` 时使用当前 Initializr 默认版本；若指定版本不在官方列表中，会提示已不再支持
 - 输出默认带彩色提示（成功/警告/错误）；如需关闭可设置环境变量 `NO_COLOR=1`
 
 ### 环境变量（可选）
@@ -154,16 +156,17 @@ springboot <command> [options]
 
 ### 最小推荐路径（新用户 3 步）
 
-1) 先确认脚本可用：
+1) 先确认脚本可用，并查看当前可创建的 Boot 版本：
 
 ```bash
 springboot --help
+springboot boot list
 ```
 
 2) 用 dry-run 预览执行计划（不创建文件）：
 
 ```bash
-springboot create --name=mydemo --dry-run
+springboot create --name=mydemo --boot=4.0.7 --dry-run
 ```
 
 3) 确认参数后正式创建项目：
@@ -216,10 +219,16 @@ springboot create --name=mydemo --group=com.lexing --pkg=com.lexing.demo --confi
 springboot create --name=mydemo --artifact-version=1.2.0
 ```
 
-7) 查看指定 Boot 版本可选依赖（官方 Initializr）：
+7) 查看当前 Initializr 支持的 Boot 版本：
 
 ```bash
-springboot deps list --boot=3.5.14 --output=terminal
+springboot boot list
+```
+
+8) 查看指定 Boot 版本可选依赖（官方 Initializr）：
+
+```bash
+springboot deps list --boot=4.0.7 --output=terminal
 ```
 
 8) 浏览器查看依赖列表（生成并打开 HTML）：
@@ -330,14 +339,18 @@ springboot deps search --query=redis --boot=3.5.14
 ### 多模块 Maven（`--packaging=pom --type=maven`）
 
 - 生成父工程 `pom.xml`（`packaging=pom`）
+- 父工程采用 BOM 模式（不继承 `spring-boot-starter-parent`），通过 `spring-boot-dependencies` 管理依赖版本
+- 使用 CI-friendly 版本属性 `${revision}`（由 `--artifact-version` 写入 `<revision>`）
+- 父工程默认包含 encoding、`maven-compiler-plugin` 与 `spring-boot-maven-plugin` 的 `pluginManagement`
+- 父工程以注释形式预置 Spring Cloud / Spring Cloud Alibaba BOM，按需取消注释即可
 - 可按 `--modules` 自动生成各子模块目录和子模块 `pom.xml`
 - `jar` 子模块依赖由 `--deps` 控制（默认 `web,devtools`）
 - 每个子模块默认包含：
   - `src/main/java/...`
   - `src/main/resources/application.properties` 或 `application.yaml`
   - `src/test/java/...`
-- `jar` 子模块会自动生成最小可运行的 `*Application.java` 和 `*ApplicationTests.java`
-- 父工程会自动生成 `.gitignore`，并包含 `spring-boot-maven-plugin` 的 `pluginManagement`
+- `jar` 子模块会自动生成最小可运行的 `*Application.java` 和 `*ApplicationTests.java`，并声明 `spring-boot-maven-plugin`
+- 父工程会自动生成 `.gitignore`
 
 ### 多模块 Gradle（`--packaging=pom --type=gradle`）
 
@@ -384,8 +397,10 @@ springboot deps search --query=redis --boot=3.5.14
   - 请手动执行 `cd <项目名>`
 
 - 单模块创建失败并提示下载失败？
-  - 检查网络是否可访问 `https://start.spring.io`
+  - 先执行 `springboot boot list` 确认当前 Initializr 支持的 Boot 版本
+  - 检查网络是否可访问 `https://start.spring.io`（或你设置的 `INITIALIZR_BASE_URL`）
   - 检查本机是否安装并可用 `curl` / `unzip`
+  - 若报 400 / 版本无效，改用 `boot list` 中的版本，例如 `--boot=4.0.7`
 
 - `springboot deps list --output=web` 成功打开后提示缺少 glow？
   - 这是非致命提示，不影响网页查看结果

@@ -1,3 +1,4 @@
 deps-cache/*.md
 deps-cache/*.html
 deps-cache/*.cache
+deps-cache/*.tsv

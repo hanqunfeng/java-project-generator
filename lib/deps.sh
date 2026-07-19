@@ -45,6 +45,14 @@ initializr_url() {
     printf '%s/%s\n' "$INITIALIZR_BASE_URL" "${path#/}"
 }
 
+# -----------------------------------------------------------------------------
+# 函数: deps_cache_dir
+# 作用: 返回依赖/Boot 版本缓存目录（可用 DEPS_CACHE_DIR 覆盖，便于测试隔离）。
+# -----------------------------------------------------------------------------
+deps_cache_dir() {
+    printf '%s\n' "${DEPS_CACHE_DIR:-${SCRIPT_DIR}/deps-cache}"
+}
+
 file_mtime_epoch() {
     local path="$1"
     if stat -f "%m" "$path" >/dev/null 2>&1; then
@@ -106,7 +114,8 @@ resolve_boot_param_key_generic() {
     local cacheKeyFile="$2"
     local key
     local cachedKey
-    local cacheDir="${SCRIPT_DIR}/deps-cache"
+    local cacheDir
+    cacheDir="$(deps_cache_dir)"
     local resolvedKey=""
     local probeUrl
     local tmpProbe
@@ -175,7 +184,8 @@ PY
 }
 
 resolve_boot_param_key() {
-    local cacheKeyFile="${SCRIPT_DIR}/deps-cache/boot-param-key.cache"
+    local cacheKeyFile
+    cacheKeyFile="$(deps_cache_dir)/boot-param-key.cache"
     if [ -n "$BOOT_PARAM_KEY" ]; then
         return 0
     fi
@@ -193,7 +203,8 @@ resolve_boot_param_key() {
 #   0 -> 总能返回可用键（探测失败时回退 bootVersion）
 # -----------------------------------------------------------------------------
 resolve_starter_boot_param_key() {
-    local cacheKeyFile="${SCRIPT_DIR}/deps-cache/starter-boot-param-key.cache"
+    local cacheKeyFile
+    cacheKeyFile="$(deps_cache_dir)/starter-boot-param-key.cache"
     if [ -n "$STARTER_BOOT_PARAM_KEY" ]; then
         return 0
     fi
@@ -216,7 +227,8 @@ ensure_dependency_catalog_cache() {
     resolve_boot_param_key
     local metadataUrl
     metadataUrl="$(initializr_url "metadata/client")?${BOOT_PARAM_KEY}=${bootVersion}"
-    local cacheDir="${SCRIPT_DIR}/deps-cache"
+    local cacheDir
+    cacheDir="$(deps_cache_dir)"
     local cacheFile="${cacheDir}/boot-${bootVersion}.md"
     local legacyCacheFile="${cacheDir}/boot-${bootVersion}.txt"
     local firstDataLine
@@ -444,7 +456,8 @@ print_dependencies_declaration() {
 #   pandoc + 浏览器打开命令（open/xdg-open/wslview/explorer.exe）
 # -----------------------------------------------------------------------------
 open_dependency_catalog_web() {
-    local cacheDir="${SCRIPT_DIR}/deps-cache"
+    local cacheDir
+    cacheDir="$(deps_cache_dir)"
     local cacheMarkdown="boot-${bootVersion}.md"
     local htmlFile="boot-web.html"
     local cssPath="${SCRIPT_DIR}/assets/web_style.css"
@@ -588,22 +601,347 @@ validate_dependencies_format() {
     done < <(echo "$csv" | tr ',' '\n')
 }
 
-validate_deps_list_args() {
-    if [[ ! "$bootVersion" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]]; then
-        log_error "Boot版本不合法: 仅支持 x.y.z 或 x.y.z-标识，例如 3.5.14 或 3.5.14-SNAPSHOT"
+validate_boot_version_format() {
+    local version="$1"
+    # 兼容 x.y.z、x.y.z-SNAPSHOT、x.y.z.RELEASE、x.y.z.BUILD-SNAPSHOT 等 Initializr ID
+    if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.]+)?$ ]]; then
+        log_error "Boot版本不合法: 仅支持 x.y.z 或带后缀标识，例如 4.0.7、4.0.7.RELEASE、4.1.1.BUILD-SNAPSHOT"
         exit "$EXIT_PARAM"
     fi
+}
+
+validate_deps_list_args() {
+    validate_boot_version_format "$bootVersion"
     if [[ "$depsOutput" != "terminal" && "$depsOutput" != "web" ]]; then
         echo "--output 不合法: 仅支持 terminal 或 web"
         exit "$EXIT_PARAM"
     fi
 }
 
-validate_deps_preview_args() {
-    if [[ ! "$bootVersion" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]]; then
-        log_error "Boot版本不合法: 仅支持 x.y.z 或 x.y.z-标识，例如 3.5.14 或 3.5.14-SNAPSHOT"
-        exit "$EXIT_PARAM"
+# -----------------------------------------------------------------------------
+# 函数: boot_version_catalog_cache_file
+# 作用: 返回 Boot 版本目录缓存路径。
+# -----------------------------------------------------------------------------
+boot_version_catalog_cache_file() {
+    printf '%s\n' "$(deps_cache_dir)/boot-versions.tsv"
+}
+
+# -----------------------------------------------------------------------------
+# 函数: ensure_boot_version_catalog
+# 作用: 保障本地存在可用的 Initializr Boot 版本目录缓存。
+# 输出:
+#   全局变量 BOOT_VERSION_CATALOG_FILE
+# -----------------------------------------------------------------------------
+ensure_boot_version_catalog() {
+    local metadataUrl
+    local cacheDir
+    local cacheFile
+    local tmpFile
+    local tmpOutput
+
+    cacheDir="$(deps_cache_dir)"
+    cacheFile="$(boot_version_catalog_cache_file)"
+    BOOT_VERSION_CATALOG_FILE="$cacheFile"
+
+    if [[ "${depsForceRefresh:-false}" != "true" && -s "$cacheFile" ]] && ! is_cache_file_expired "$cacheFile" "$DEPS_CACHE_TTL_SECONDS"; then
+        if awk -F'\t' '$1 == "DEFAULT" && NF >= 2 { found=1 } END { exit found ? 0 : 1 }' "$cacheFile"; then
+            return 0
+        fi
     fi
+
+    metadataUrl="$(initializr_url "metadata/client")"
+    tmpFile=$(mktemp)
+    tmpOutput=$(mktemp)
+    register_tmp_file "$tmpFile"
+    register_tmp_file "$tmpOutput"
+
+    if ! curl --fail --show-error --location --retry 3 --retry-delay 1 --no-progress-meter "$metadataUrl" -o "$tmpFile"; then
+        log_error "Boot 版本列表获取失败: 请检查网络或 Initializr 服务是否可用 (${INITIALIZR_BASE_URL})"
+        exit "$EXIT_NETWORK"
+    fi
+
+    if ! command -v python3 >/dev/null 2>&1; then
+        log_error "Boot 版本列表解析失败: 需要可用的 python3"
+        exit "$EXIT_DEP"
+    fi
+
+    python3 - "$tmpFile" "$INITIALIZR_BASE_URL" > "$tmpOutput" <<'PY'
+import json
+import sys
+
+metadata_path = sys.argv[1]
+base_url = sys.argv[2]
+
+try:
+    with open(metadata_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+except Exception:
+    print(
+        "Boot 版本列表解析失败: Initializr 返回的不是有效 JSON，"
+        f"请检查 INITIALIZR_BASE_URL ({base_url}) 是否指向可用服务。",
+        file=sys.stderr,
+    )
+    sys.exit(2)
+
+boot = data.get("bootVersion") or {}
+default_id = str(boot.get("default") or "")
+raw_values = boot.get("values") or []
+versions = []
+
+def walk(nodes):
+    for node in nodes or []:
+        if not isinstance(node, dict):
+            continue
+        nested = node.get("values")
+        node_id = node.get("id")
+        if nested and isinstance(nested, list) and not node_id:
+            walk(nested)
+            continue
+        if node_id:
+            versions.append(
+                {
+                    "id": str(node_id),
+                    "name": str(node.get("name") or node_id),
+                }
+            )
+            continue
+        if nested and isinstance(nested, list):
+            walk(nested)
+
+walk(raw_values)
+
+if not versions:
+    print(
+        "未获取到 Boot 版本数据，请检查 Initializr 返回内容或镜像站点是否兼容。",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+if not default_id:
+    default_id = versions[0]["id"]
+
+print(f"DEFAULT\t{default_id}")
+for item in versions:
+    print(f"{item['id']}\t{item['name']}")
+PY
+    local pyStatus=$?
+    if [ "$pyStatus" -ne 0 ]; then
+        if [ "$pyStatus" -eq 2 ]; then
+            exit "$EXIT_NETWORK"
+        fi
+        exit "$EXIT_DEP"
+    fi
+
+    mkdir -p "$cacheDir" >/dev/null 2>&1 || true
+    mv "$tmpOutput" "$cacheFile"
+    BOOT_VERSION_CATALOG_FILE="$cacheFile"
+}
+
+# -----------------------------------------------------------------------------
+# 函数: initializr_default_boot_version
+# 作用: 读取缓存中的 Initializr 默认 Boot 版本。
+# -----------------------------------------------------------------------------
+initializr_default_boot_version() {
+    local cacheFile="${BOOT_VERSION_CATALOG_FILE:-$(boot_version_catalog_cache_file)}"
+    python3 - "$cacheFile" <<'PY'
+import re
+import sys
+
+cache_path = sys.argv[1]
+default_id = ""
+versions = {}
+with open(cache_path, "r", encoding="utf-8") as f:
+    for line in f:
+        line = line.rstrip("\n")
+        if not line or "\t" not in line:
+            continue
+        left, right = line.split("\t", 1)
+        if left == "DEFAULT":
+            default_id = right
+            continue
+        versions[left] = right
+
+if not default_id:
+    sys.exit(1)
+
+name = versions.get(default_id, "")
+if re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", name or ""):
+    print(name)
+elif default_id.endswith(".RELEASE"):
+    print(default_id[: -len(".RELEASE")])
+else:
+    print(default_id)
+PY
+}
+
+# -----------------------------------------------------------------------------
+# 函数: match_boot_version_in_catalog
+# 作用: 将用户传入的 --boot 值匹配到目录中的官方 ID。
+# 入参:
+#   $1 -> 用户传入版本
+# 输出:
+#   stdout -> 匹配到的官方 ID；未匹配则退出码 1
+# -----------------------------------------------------------------------------
+match_boot_version_in_catalog() {
+    local requested="$1"
+    local cacheFile="${BOOT_VERSION_CATALOG_FILE:-$(boot_version_catalog_cache_file)}"
+
+    python3 - "$cacheFile" "$requested" <<'PY'
+import re
+import sys
+
+cache_path = sys.argv[1]
+requested = sys.argv[2].strip()
+default_id = ""
+versions = []
+
+with open(cache_path, "r", encoding="utf-8") as f:
+    for line in f:
+        line = line.rstrip("\n")
+        if not line or "\t" not in line:
+            continue
+        left, right = line.split("\t", 1)
+        if left == "DEFAULT":
+            default_id = right
+            continue
+        versions.append((left, right))
+
+def preferred(vid: str, name: str) -> str:
+    if re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", name or ""):
+        return name
+    if vid.endswith(".RELEASE"):
+        return vid[: -len(".RELEASE")]
+    return vid
+
+candidates = []
+for vid, name in versions:
+    if requested in (vid, name, preferred(vid, name)):
+        candidates.append((vid, name))
+        continue
+    if vid.startswith(requested + "."):
+        candidates.append((vid, name))
+        continue
+    if vid.endswith(".RELEASE") and vid[: -len(".RELEASE")] == requested:
+        candidates.append((vid, name))
+
+seen = set()
+ordered = []
+for item in candidates:
+    if item[0] in seen:
+        continue
+    seen.add(item[0])
+    ordered.append(item)
+
+if not ordered:
+    sys.exit(1)
+
+chosen = None
+for vid, name in ordered:
+    if vid == default_id:
+        chosen = (vid, name)
+        break
+if chosen is None:
+    chosen = ordered[0]
+
+print(preferred(chosen[0], chosen[1]))
+PY
+}
+
+# -----------------------------------------------------------------------------
+# 函数: resolve_project_boot_version
+# 作用: 为 create / module add 解析 Boot 版本。
+# 规则:
+#   - 未指定 --boot: 使用当前 Initializr 默认版本
+#   - 已指定 --boot: 必须能在官方版本列表中匹配，否则提示已不再支持
+# 依赖:
+#   bootVersion / bootVersionSpecified
+# -----------------------------------------------------------------------------
+resolve_project_boot_version() {
+    local matched
+    local defaultBoot
+    local availablePreview
+
+    ensure_boot_version_catalog
+    defaultBoot="$(initializr_default_boot_version)"
+    if [ -z "$defaultBoot" ]; then
+        log_error "未能从 Initializr 获取默认 Boot 版本"
+        exit "$EXIT_DEP"
+    fi
+
+    if [[ "${bootVersionSpecified:-false}" != "true" ]]; then
+        bootVersion="$defaultBoot"
+        return 0
+    fi
+
+    validate_boot_version_format "$bootVersion"
+    if matched="$(match_boot_version_in_catalog "$bootVersion")"; then
+        bootVersion="$matched"
+        return 0
+    fi
+
+    availablePreview=$(awk -F'\t' '$1 != "DEFAULT" { print $1 }' "${BOOT_VERSION_CATALOG_FILE}" | head -n 8 | tr '\n' ',' | sed 's/,$//')
+    log_error "Boot 版本 '${bootVersion}' 已不被当前 Initializr 支持（官方已不再提供该版本创建）。"
+    echo "当前默认版本: ${defaultBoot}"
+    if [ -n "$availablePreview" ]; then
+        echo "可用版本示例: ${availablePreview}"
+    fi
+    echo "请执行 'springboot boot list' 查看完整列表，或省略 --boot 以使用默认版本。"
+    exit "$EXIT_PARAM"
+}
+
+# -----------------------------------------------------------------------------
+# 函数: list_boot_versions
+# 作用: 查询当前 Initializr 支持的 Spring Boot 版本列表（用于 create --boot）。
+# -----------------------------------------------------------------------------
+list_boot_versions() {
+    local cacheFile
+    local default_id
+    ensure_boot_version_catalog
+    cacheFile="${BOOT_VERSION_CATALOG_FILE}"
+    default_id=$(awk -F'\t' '$1 == "DEFAULT" { print $2; exit }' "$cacheFile")
+
+    python3 - "$cacheFile" "$INITIALIZR_BASE_URL" "$default_id" <<'PY'
+import sys
+
+cache_path = sys.argv[1]
+base_url = sys.argv[2]
+default_id = sys.argv[3]
+versions = []
+
+with open(cache_path, "r", encoding="utf-8") as f:
+    for line in f:
+        line = line.rstrip("\n")
+        if not line or "\t" not in line:
+            continue
+        left, right = line.split("\t", 1)
+        if left == "DEFAULT":
+            continue
+        versions.append({"id": left, "name": right})
+
+if not versions:
+    print("未获取到 Boot 版本数据。", file=sys.stderr)
+    sys.exit(1)
+
+id_width = max(len("ID"), max(len(v["id"]) for v in versions))
+name_width = max(len("Name"), max(len(v["name"]) for v in versions))
+
+print(f"Initializr: {base_url}")
+print(f"默认版本:   {default_id or '(未提供)'}")
+print("")
+print("可用版本（可用于 springboot create --boot=<版本>）:")
+print(f"  {'':1}{'ID'.ljust(id_width)}  {'Name'.ljust(name_width)}")
+print(f"  {'':1}{'-' * id_width}  {'-' * name_width}")
+for item in versions:
+    mark = "*" if item["id"] == default_id else " "
+    print(f"  {mark}{item['id'].ljust(id_width)}  {item['name'].ljust(name_width)}")
+print("")
+print("说明: 标记 * 为当前 Initializr 默认版本；create 时可传 ID（如 4.0.7.RELEASE）或其简写（如 4.0.7）。")
+print("提示: 若列表异常，可执行 springboot boot list --refresh 强制刷新缓存。")
+PY
+}
+
+validate_deps_preview_args() {
+    validate_boot_version_format "$bootVersion"
     if [[ "$projectType" != "maven" && "$projectType" != "gradle" ]]; then
         echo "构建工具不合法: 仅支持 maven 或 gradle"
         exit "$EXIT_PARAM"

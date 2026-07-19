@@ -77,7 +77,7 @@ if (( CURRENT == 2 )); then
   _arguments \
     '--help[显示帮助信息]' \
     '--version[显示脚本版本]' \
-    '1:command:(create module deps)'
+    '1:command:(create module deps boot)'
   return
 fi
 
@@ -279,10 +279,27 @@ case "$cmd" in
         ;;
     esac
     ;;
+  boot)
+    if (( CURRENT == 3 )); then
+      _arguments '2:subcommand:(list)'
+      return
+    fi
+    local boot_sub="${words[3]}"
+    case "$boot_sub" in
+      list)
+        _arguments -s \
+          '--help[显示 boot list 命令帮助]' \
+          '--refresh[强制刷新 Boot 版本缓存]'
+        ;;
+      *)
+        _arguments '2:subcommand:(list)'
+        ;;
+    esac
+    ;;
   *)
     _arguments \
       '--help[显示帮助信息]' \
       '--version[显示脚本版本]' \
-      '1:command:(create module deps)'
+      '1:command:(create module deps boot)'
     ;;
 esac

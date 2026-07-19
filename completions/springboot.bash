@@ -27,7 +27,7 @@ _springboot_completion() {
     cmd="${COMP_WORDS[1]}"
     subcmd="${COMP_WORDS[2]}"
 
-    local root_opts="--help --version create module deps"
+    local root_opts="--help --version create module deps boot"
     local create_opts="--help --dry-run --name= --boot= --type= --packaging= --modules= --config= --java= --language= --gradle-dsl= --group= --artifact= --artifact-version= --desc= --pkg= --deps="
     local module_opts="--help add list remove"
     local module_add_opts="--help --dry-run --name= --module= --module-packaging= --module-path= --boot= --type= --packaging= --config= --java= --language= --gradle-dsl= --group= --artifact= --artifact-version= --desc= --pkg= --deps="
@@ -37,6 +37,8 @@ _springboot_completion() {
     local deps_list_opts="--help --boot= --output= --refresh"
     local deps_preview_opts="--help --deps= --boot= --type= --java= --language= --gradle-dsl="
     local deps_search_opts="--help --query= --boot= --refresh"
+    local boot_opts="--help list"
+    local boot_list_opts="--help --refresh"
 
     if [[ $COMP_CWORD -le 1 ]]; then
         COMPREPLY=( $(compgen -W "$root_opts" -- "$cur") )
@@ -123,6 +125,15 @@ _springboot_completion() {
                 COMPREPLY=( $(compgen -W "$deps_search_opts" -- "$cur") )
             else
                 COMPREPLY=( $(compgen -W "$deps_opts" -- "$cur") )
+            fi
+            ;;
+        boot)
+            if [[ $COMP_CWORD -le 2 ]]; then
+                COMPREPLY=( $(compgen -W "$boot_opts" -- "$cur") )
+            elif [[ "$subcmd" == "list" ]]; then
+                COMPREPLY=( $(compgen -W "$boot_list_opts" -- "$cur") )
+            else
+                COMPREPLY=( $(compgen -W "$boot_opts" -- "$cur") )
             fi
             ;;
         *)

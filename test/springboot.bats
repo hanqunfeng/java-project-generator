@@ -5,6 +5,13 @@ setup() {
   PROJECT_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   WORK_DIR="$(mktemp -d)"
   cd "$WORK_DIR"
+  export DEPS_CACHE_DIR="$WORK_DIR/deps-cache"
+  mkdir -p "$DEPS_CACHE_DIR"
+  cat > "$DEPS_CACHE_DIR/boot-versions.tsv" <<'EOF'
+DEFAULT	4.0.7.RELEASE
+4.1.0.RELEASE	4.1.0
+4.0.7.RELEASE	4.0.7
+EOF
 }
 
 # 每个用例后清理临时目录。
@@ -41,6 +48,26 @@ teardown() {
   [ "$status" -eq 1 ]
   [[ "$output" == *"Boot版本不合法"* ]]
 }
+
+@test "未指定 boot 时使用 Initializr 默认版本" {
+  run bash "$PROJECT_ROOT/springboot" create --name=abcde --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Boot版本:     4.0.7"* ]]
+}
+
+@test "指定已下线 boot 版本时提示官方不再支持" {
+  run bash "$PROJECT_ROOT/springboot" create --name=abcde --boot=3.5.14 --dry-run
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"已不被当前 Initializr 支持"* ]]
+  [[ "$output" == *"springboot boot list"* ]]
+}
+
+@test "指定简写 boot 版本可匹配目录并规范化" {
+  run bash "$PROJECT_ROOT/springboot" create --name=abcde --boot=4.0.7 --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Boot版本:     4.0.7"* ]]
+}
+
 
 @test "artifact-version 参数生效" {
   run bash "$PROJECT_ROOT/springboot" create --name=abcde --artifact-version=1.2.0 --dry-run
@@ -282,6 +309,16 @@ EOF
   run bash "$PROJECT_ROOT/springboot" deps list --help
   [ "$status" -eq 0 ]
   [[ "$output" == *"--output=<值>"* ]]
+
+  run bash "$PROJECT_ROOT/springboot" boot list --help
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"springboot boot list"* ]]
+}
+
+@test "boot 未知子命令返回参数错误" {
+  run bash "$PROJECT_ROOT/springboot" boot unknown
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"未知子命令: boot unknown"* ]]
 }
 
 @test "支持 language 与 gradle-dsl 参数（dry-run）" {
@@ -325,6 +362,24 @@ EOF
   [ -f "abcde/api/pom.xml" ]
   run rg "<dependencies>" "abcde/api/pom.xml"
   [ "$status" -eq 0 ]
+}
+
+@test "创建 Maven 多模块父 POM 使用 BOM 模式与 revision" {
+  run bash "$PROJECT_ROOT/springboot" create --name=abcde --packaging=pom --type=maven --modules=api --artifact-version=1.2.0 --boot=4.0.7
+  [ "$status" -eq 0 ]
+  [ -f "abcde/pom.xml" ]
+  ! grep -q "spring-boot-starter-parent" "abcde/pom.xml"
+  grep -q "<revision>1.2.0</revision>" "abcde/pom.xml"
+  grep -q '<version>${revision}</version>' "abcde/pom.xml"
+  grep -q "spring-boot-dependencies" "abcde/pom.xml"
+  grep -q "maven-compiler-plugin" "abcde/pom.xml"
+  grep -q "spring-cloud-dependencies" "abcde/pom.xml"
+  grep -q "spring-cloud-alibaba-dependencies" "abcde/pom.xml"
+  # Cloud BOM 位于注释块内（取消注释前不会生效）
+  grep -q "Spring Cloud 依赖 BOM（按需取消注释）" "abcde/pom.xml"
+  grep -q "Spring Cloud Alibaba 依赖 BOM（按需取消注释）" "abcde/pom.xml"
+  grep -q '<version>${revision}</version>' "abcde/api/pom.xml"
+  grep -q "spring-boot-maven-plugin" "abcde/api/pom.xml"
 }
 
 @test "创建 Gradle Kotlin DSL 多模块后生成 kts 文件" {

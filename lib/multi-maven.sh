@@ -405,7 +405,8 @@ print_maven_plan() {
         plan_echo "CHECK" "若父 POM 已存在模块 '${mod}'，则终止并提示冲突（相对路径挂载）"
         plan_echo "FLOW" "输出完成提示: Maven 子模块追加完成: ${mod}"
     else
-        parentVersion="${projectVersion}"
+        # 子模块 parent.version 统一引用 ${revision}，与父 POM 的 CI-friendly 版本对齐
+        parentVersion='${revision}'
         plan_echo "WRITE" "创建父项目目录: '${projectName}'"
         plan_echo "WRITE" "生成项目忽略文件: '${projectName}/.gitignore'"
         if [ -n "$subModules" ]; then
@@ -413,7 +414,7 @@ print_maven_plan() {
         else
             plan_echo "FLOW" "未提供 modules 参数，父 POM 将不包含 <modules> 列表"
         fi
-        plan_echo "WRITE" "生成父 POM 文件: '${projectName}/pom.xml' (packaging=pom, bootVersion=${bootVersion}, javaVersion=${javaVersion})"
+        plan_echo "WRITE" "生成父 POM 文件: '${projectName}/pom.xml' (packaging=pom, bootVersion=${bootVersion}, javaVersion=${javaVersion}, revision=${projectVersion})"
         if [ -n "$subModules" ]; then
             while IFS= read -r mod; do
                 [ -z "$mod" ] && continue
@@ -469,6 +470,15 @@ create_maven_module() {
     <dependencies>
 ${depsBlock}
     </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
 
 </project>
 EOF
@@ -580,12 +590,14 @@ if [[ "$action" == "add-module" ]]; then
     append_module_to_parent_pom "${targetParentPom}" "$mod"
     echo "Maven 子模块追加完成: ${mod} (父模块路径: ${modulePath:-<项目根>}, packaging=${modulePackaging})"
 else
-    parentVersion="${projectVersion}"
+    # 子模块 parent.version 统一引用 ${revision}
+    parentVersion='${revision}'
     escapedGroupId="$(xml_escape "$groupId")"
     escapedArtifactId="$(xml_escape "$artifactId")"
     escapedProjectVersion="$(xml_escape "$projectVersion")"
     escapedProjectName="$(xml_escape "$projectName")"
     escapedDescription="$(xml_escape "$description")"
+    escapedBootVersion="$(xml_escape "$bootVersion")"
     # 创建父项目目录
     mkdir -p "${projectName}"
     write_project_gitignore "${projectName}"
@@ -601,7 +613,8 @@ else
         modulesXml+="    </modules>"$'\n'
     fi
 
-    # 生成父 pom.xml
+    # 生成父 pom.xml（BOM 模式，不继承 spring-boot-starter-parent）
+    # 注意: heredoc 未加引号，Maven 属性需写成 \${...}，避免被 bash 展开
     cat > "${projectName}/pom.xml" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
@@ -609,34 +622,54 @@ else
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <parent>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-starter-parent</artifactId>
-        <version>${bootVersion}</version>
-        <relativePath/>
-    </parent>
-
     <groupId>${escapedGroupId}</groupId>
     <artifactId>${escapedArtifactId}</artifactId>
-    <version>${escapedProjectVersion}</version>
+    <version>\${revision}</version>
     <packaging>pom</packaging>
     <name>${escapedProjectName}</name>
     <description>${escapedDescription}</description>
 
     <properties>
         <java.version>${javaVersion}</java.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <revision>${escapedProjectVersion}</revision>
+        <spring.boot.version>${escapedBootVersion}</spring.boot.version>
+        <!-- <spring-cloud.version>2025.0.0</spring-cloud.version> -->
+        <!-- <spring-cloud-alibaba.version>2025.0.0.0</spring-cloud-alibaba.version> -->
     </properties>
 
 ${modulesXml}
     <dependencyManagement>
         <dependencies>
+            <!-- Spring Boot 依赖 BOM（不是 starter-parent） -->
             <dependency>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-dependencies</artifactId>
-                <version>${bootVersion}</version>
+                <version>\${spring.boot.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+
+            <!-- Spring Cloud 依赖 BOM（按需取消注释）
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>\${spring-cloud.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            -->
+
+            <!-- Spring Cloud Alibaba 依赖 BOM（按需取消注释）
+            <dependency>
+                <groupId>com.alibaba.cloud</groupId>
+                <artifactId>spring-cloud-alibaba-dependencies</artifactId>
+                <version>\${spring-cloud-alibaba.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            -->
         </dependencies>
     </dependencyManagement>
 
@@ -644,11 +677,28 @@ ${modulesXml}
         <pluginManagement>
             <plugins>
                 <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.13.0</version>
+                    <configuration>
+                        <release>\${java.version}</release>
+                        <encoding>\${project.build.sourceEncoding}</encoding>
+                    </configuration>
+                </plugin>
+                <plugin>
                     <groupId>org.springframework.boot</groupId>
                     <artifactId>spring-boot-maven-plugin</artifactId>
+                    <version>\${spring.boot.version}</version>
                 </plugin>
             </plugins>
         </pluginManagement>
+
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+            </plugin>
+        </plugins>
     </build>
 
 </project>

@@ -3,6 +3,8 @@
 load_deps_harness() {
   PROJECT_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SCRIPT_DIR="$PROJECT_ROOT"
+  DEPS_CACHE_DIR="$(mktemp -d)"
+  export DEPS_CACHE_DIR
   EXIT_PARAM=1
   EXIT_NETWORK=2
   EXIT_FS=3
@@ -83,4 +85,111 @@ load_deps_harness() {
   run is_cache_file_expired "$cacheFile" 0
   [ "$status" -eq 0 ]
   rm -f "$cacheFile"
+}
+
+@test "list_boot_versions 解析元数据并标记默认版本" {
+  load_deps_harness
+  fake_bin="$(mktemp -d)"
+  cat > "$fake_bin/curl" <<'EOF'
+#!/usr/bin/env bash
+out=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+cat > "$out" <<'JSON'
+{"bootVersion":{"default":"4.0.7.RELEASE","values":[{"id":"4.1.0.RELEASE","name":"4.1.0"},{"id":"4.0.7.RELEASE","name":"4.0.7"}]}}
+JSON
+EOF
+  chmod +x "$fake_bin/curl"
+  rm -f "$DEPS_CACHE_DIR/boot-versions.tsv"
+  PATH="$fake_bin:$PATH" run list_boot_versions
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"默认版本:   4.0.7.RELEASE"* ]]
+  [[ "$output" == *"*4.0.7.RELEASE"* ]]
+  [[ "$output" == *"4.1.0.RELEASE"* ]]
+  rm -rf "$fake_bin"
+}
+
+@test "list_boot_versions 对非 JSON 响应给出明确错误" {
+  load_deps_harness
+  fake_bin="$(mktemp -d)"
+  cat > "$fake_bin/curl" <<'EOF'
+#!/usr/bin/env bash
+out=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+printf '<html>error</html>\n' > "$out"
+EOF
+  chmod +x "$fake_bin/curl"
+  rm -f "$DEPS_CACHE_DIR/boot-versions.tsv"
+  PATH="$fake_bin:$PATH" run list_boot_versions
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"不是有效 JSON"* ]]
+  rm -rf "$fake_bin"
+}
+
+@test "resolve_project_boot_version 未指定时使用默认版本" {
+  load_deps_harness
+  mkdir -p "$DEPS_CACHE_DIR"
+  cat > "$DEPS_CACHE_DIR/boot-versions.tsv" <<'EOF'
+DEFAULT	4.0.7.RELEASE
+4.0.7.RELEASE	4.0.7
+EOF
+  bootVersionSpecified=false
+  bootVersion=""
+  run bash -c '
+    source "$1/lib/arg-common.sh"
+    SCRIPT_DIR="$1"
+    DEPS_CACHE_DIR="$2"
+    export DEPS_CACHE_DIR
+    EXIT_PARAM=1
+    EXIT_NETWORK=2
+    EXIT_FS=3
+    EXIT_DEP=4
+    tmp_files=()
+    register_tmp_file() { :; }
+    log_error() { printf "%s\n" "$*" >&2; }
+    source "$1/lib/deps.sh"
+    bootVersionSpecified=false
+    bootVersion=""
+    resolve_project_boot_version
+    printf "%s\n" "$bootVersion"
+  ' bash "$PROJECT_ROOT" "$DEPS_CACHE_DIR"
+  [ "$status" -eq 0 ]
+  [ "$output" = "4.0.7" ]
+}
+
+@test "resolve_project_boot_version 拒绝已下线版本" {
+  load_deps_harness
+  mkdir -p "$DEPS_CACHE_DIR"
+  cat > "$DEPS_CACHE_DIR/boot-versions.tsv" <<'EOF'
+DEFAULT	4.0.7.RELEASE
+4.0.7.RELEASE	4.0.7
+EOF
+  run bash -c '
+    source "$1/lib/arg-common.sh"
+    SCRIPT_DIR="$1"
+    DEPS_CACHE_DIR="$2"
+    export DEPS_CACHE_DIR
+    EXIT_PARAM=1
+    EXIT_NETWORK=2
+    EXIT_FS=3
+    EXIT_DEP=4
+    tmp_files=()
+    register_tmp_file() { :; }
+    log_error() { printf "%s\n" "$*" >&2; }
+    source "$1/lib/deps.sh"
+    bootVersionSpecified=true
+    bootVersion="3.5.14"
+    resolve_project_boot_version
+  ' bash "$PROJECT_ROOT" "$DEPS_CACHE_DIR"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"已不被当前 Initializr 支持"* ]]
 }

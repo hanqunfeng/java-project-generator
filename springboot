@@ -136,13 +136,14 @@ print_help_root() {
     echo "  springboot <command> [options]"
     echo ""
     echo "说明:"
-    echo "  Spring Boot 项目脚手架（create / module / deps）"
+    echo "  Spring Boot 项目脚手架（create / module / deps / boot）"
     echo "  每个命令和子命令均支持 --help 或 -h 查看说明"
     echo ""
     echo "命令:"
     echo "  create            创建项目（单模块或多模块）"
     echo "  module            模块操作（add / list / remove）"
     echo "  deps              依赖工具（list / preview / search）"
+    echo "  boot              Boot 版本工具（list）"
     echo ""
     echo "通用选项:"
     echo "  --help, -h        显示帮助信息并退出"
@@ -155,11 +156,47 @@ print_help_root() {
     echo "  DEPS_CACHE_TTL_SECONDS=<秒>      依赖缓存过期秒数（默认 86400）"
     echo ""
     echo "快速示例:"
+    echo "  springboot boot list"
     echo "  springboot create --name=mydemo"
     echo "  springboot module add --name=myproject --type=maven --module=order --deps=webflux"
     echo "  springboot deps list --boot=3.5.14 --output=terminal"
     echo "  springboot deps preview --type=gradle --deps=web,data-jpa --boot=3.5.14"
     echo "  springboot module list --name=myproject --type=maven"
+}
+
+print_help_boot() {
+    echo "用法:"
+    echo "  springboot boot <subcommand> [options]"
+    echo ""
+    echo "子命令:"
+    echo "  list              查询当前 Initializr 支持的 Spring Boot 版本"
+    echo ""
+    echo "选项:"
+    echo "  --help, -h        显示帮助信息并退出"
+    echo ""
+    echo "示例:"
+    echo "  springboot boot list"
+}
+
+print_help_boot_list() {
+    echo "用法:"
+    echo "  springboot boot list [选项]"
+    echo ""
+    echo "说明:"
+    echo "  查询当前 Initializr 支持、可用于项目创建的 Spring Boot 版本列表。"
+    echo "  数据来自 \${INITIALIZR_BASE_URL}/metadata/client 的 bootVersion 字段。"
+    echo ""
+    echo "选项:"
+    echo "  --refresh                    强制刷新 Boot 版本缓存"
+    echo "  --help, -h                   显示本命令帮助并退出"
+    echo ""
+    echo "相关环境变量:"
+    echo "  INITIALIZR_BASE_URL=<url>      覆盖 Spring Initializr 基础地址（默认 https://start.spring.io）"
+    echo "  DEPS_CACHE_TTL_SECONDS=<秒>      版本列表缓存过期秒数（默认 86400）"
+    echo ""
+    echo "示例:"
+    echo "  springboot boot list"
+    echo "  springboot boot list --refresh"
 }
 
 print_help_create() {
@@ -181,7 +218,7 @@ print_help_create() {
     echo "                               可先执行 springboot deps list --boot=<版本> 查看可用依赖ID"
     echo "                               - 单模块(jar/war): 作用于当前项目"
     echo "                               - 多模块(pom): 作用于本次创建的 jar 子模块"
-    echo "  --boot=<值>                  Spring Boot 版本（默认 3.5.14）"
+    echo "  --boot=<值>                  Spring Boot 版本（默认取当前 Initializr 默认版本，可用 springboot boot list 查看）"
     echo "  --config=<值>                配置文件格式：properties | yaml（默认 properties）"
     echo "  --java=<值>                  Java 版本：17 | 21 | 25（默认 17）"
     echo "  --language=<值>              代码语言：java | kotlin | groovy（默认 java）"
@@ -243,7 +280,7 @@ print_help_module_add() {
     echo "  --module-path=<值>           父模块路径（相对项目根，默认挂载到项目根）"
     echo "  --deps=<值>                  依赖ID列表（默认 ${DEFAULT_DEPS}，仅 module-packaging=jar 生效）"
     echo "                               仅支持 Spring Boot 官方 Initializr 提供的依赖ID"
-    echo "  --boot=<值>                  Spring Boot 版本（默认 3.5.14）"
+    echo "  --boot=<值>                  Spring Boot 版本（默认取当前 Initializr 默认版本，可用 springboot boot list 查看）"
     echo "  --config=<值>                配置文件格式：properties | yaml（默认 properties）"
     echo "  --java=<值>                  Java 版本：17 | 21 | 25（默认 17）"
     echo "  --language=<值>              代码语言：java | kotlin | groovy（默认 java）"
@@ -314,7 +351,7 @@ print_help_deps_list() {
     echo "  查看指定 Boot 版本可用依赖列表（缓存到 deps-cache/）。"
     echo ""
     echo "选项:"
-    echo "  --boot=<值>                  Spring Boot 版本（默认 3.5.14）"
+    echo "  --boot=<值>                  Spring Boot 版本（默认取当前 Initializr 默认版本，可用 springboot boot list 查看）"
     echo "  --output=<值>                输出方式：terminal | web（默认 terminal）"
     echo "  --refresh                    强制刷新缓存"
     echo "  --help, -h                   显示本命令帮助并退出"
@@ -345,7 +382,7 @@ print_help_deps_preview() {
     echo "  --type=<值>                  构建工具：maven | gradle（默认 maven）"
     echo "  --language=<值>              代码语言：java | kotlin | groovy（默认 java）"
     echo "  --gradle-dsl=<值>            Gradle DSL：groovy | kotlin（默认 groovy）"
-    echo "  --boot=<值>                  Spring Boot 版本（默认 3.5.14）"
+    echo "  --boot=<值>                  Spring Boot 版本（默认取当前 Initializr 默认版本，可用 springboot boot list 查看）"
     echo "  --java=<值>                  Java 版本：17 | 21 | 25（默认 17）"
     echo "  --help, -h                   显示本命令帮助并退出"
     echo ""
@@ -363,7 +400,7 @@ print_help_deps_search() {
     echo ""
     echo "选项:"
     echo "  --query=<值>                 搜索关键词（匹配 ID / 名称 / 描述）"
-    echo "  --boot=<值>                  Spring Boot 版本（默认 3.5.14）"
+    echo "  --boot=<值>                  Spring Boot 版本（默认取当前 Initializr 默认版本，可用 springboot boot list 查看）"
     echo "  --help, -h                   显示帮助信息并退出"
     echo ""
     echo "相关环境变量:"
@@ -513,8 +550,8 @@ validate_shared_project_args() {
         echo "项目名不合法: 只能包含字母、数字、下划线、短横线，且不能以下划线或短横线开头，长度5~50"
         exit "$EXIT_PARAM"
     fi
-    if [[ ! "$bootVersion" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]]; then
-        log_error "Boot版本不合法: 仅支持 x.y.z 或 x.y.z-标识，例如 3.5.14 或 3.5.14-SNAPSHOT"
+    if [[ ! "$bootVersion" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.]+)?$ ]]; then
+        log_error "Boot版本不合法: 仅支持 x.y.z 或带后缀标识，例如 4.0.7、4.0.7.RELEASE、4.1.1.BUILD-SNAPSHOT"
         exit "$EXIT_PARAM"
     fi
     if [[ "$projectType" != "maven" && "$projectType" != "gradle" ]]; then
@@ -797,6 +834,28 @@ case "$1" in
                 ;;
         esac
         ;;
+    boot)
+        shift
+        if [ "$#" -eq 0 ]; then
+            print_help_boot
+            exit "$EXIT_PARAM"
+        fi
+        case "$1" in
+            --help|-h)
+                print_help_boot
+                exit 0
+                ;;
+            list)
+                mode="boot-list"
+                shift
+                ;;
+            *)
+                log_error "未知子命令: boot $1"
+                print_help_boot
+                exit "$EXIT_PARAM"
+                ;;
+        esac
+        ;;
     *)
         log_error "未知命令: $1"
         print_help_root
@@ -811,7 +870,10 @@ case "$mode" in
                 --help|-h) print_help_create; exit 0 ;;
                 --dry-run) dryRun=true ;;
                 --name=*) projectName="${1#*=}" ;;
-                --boot=*) bootVersion="${1#*=}" ;;
+                --boot=*)
+                    bootVersion="${1#*=}"
+                    bootVersionSpecified=true
+                    ;;
                 --type=*) projectType="${1#*=}" ;;
                 --packaging=*) packaging="${1#*=}" ;;
                 --modules=*) subModules="${1#*=}" ;;
@@ -836,7 +898,7 @@ case "$mode" in
 
         action="create"
         dryRun=${dryRun:-false}
-        bootVersion=${bootVersion:-3.5.14}
+        bootVersionSpecified=${bootVersionSpecified:-false}
         projectType=${projectType:-maven}
         packaging=${packaging:-jar}
         configFormat=${configFormat:-properties}
@@ -856,6 +918,7 @@ case "$mode" in
         modulePathSpecified=${modulePathSpecified:-false}
         modulePath=${modulePath:-}
 
+        resolve_project_boot_version
         validate_create_args
         if [[ "$dryRun" != "true" ]]; then
             if [[ "$packaging" != "pom" ]]; then
@@ -884,7 +947,10 @@ case "$mode" in
                     modulePath="${1#*=}"
                     modulePathSpecified=true
                     ;;
-                --boot=*) bootVersion="${1#*=}" ;;
+                --boot=*)
+                    bootVersion="${1#*=}"
+                    bootVersionSpecified=true
+                    ;;
                 --type=*) projectType="${1#*=}" ;;
                 --packaging=*) packaging="${1#*=}" ;;
                 --config=*) configFormat="${1#*=}" ;;
@@ -908,7 +974,7 @@ case "$mode" in
 
         action="add-module"
         dryRun=${dryRun:-false}
-        bootVersion=${bootVersion:-3.5.14}
+        bootVersionSpecified=${bootVersionSpecified:-false}
         projectType=${projectType:-maven}
         packaging=${packaging:-pom}
         configFormat=${configFormat:-properties}
@@ -928,6 +994,7 @@ case "$mode" in
         modulePathSpecified=${modulePathSpecified:-false}
         modulePath=${modulePath:-}
 
+        resolve_project_boot_version
         validate_module_add_args
         if [[ "$dryRun" != "true" && "$modulePackaging" == "jar" && "$dependencies" != "$DEFAULT_DEPS" ]]; then
             validate_dependencies_against_initializr "$dependencies"
@@ -990,7 +1057,10 @@ case "$mode" in
         while [ "$#" -gt 0 ]; do
             case "$1" in
                 --help|-h) print_help_deps_list; exit 0 ;;
-                --boot=*) bootVersion="${1#*=}" ;;
+                --boot=*)
+                    bootVersion="${1#*=}"
+                    bootVersionSpecified=true
+                    ;;
                 --output=*) depsOutput="${1#*=}" ;;
                 --refresh) depsForceRefresh=true ;;
                 *)
@@ -1001,8 +1071,11 @@ case "$mode" in
             esac
             shift
         done
-        bootVersion=${bootVersion:-3.5.14}
+        bootVersionSpecified=${bootVersionSpecified:-false}
         depsOutput=${depsOutput:-terminal}
+        if [[ "$bootVersionSpecified" != "true" ]]; then
+            resolve_project_boot_version
+        fi
         validate_deps_list_args
         if [[ "$depsOutput" == "web" ]]; then
             open_dependency_catalog_web
@@ -1018,7 +1091,10 @@ case "$mode" in
             case "$1" in
                 --help|-h) print_help_deps_preview; exit 0 ;;
                 --deps=*) depsPreviewCsv="${1#*=}" ;;
-                --boot=*) bootVersion="${1#*=}" ;;
+                --boot=*)
+                    bootVersion="${1#*=}"
+                    bootVersionSpecified=true
+                    ;;
                 --type=*) projectType="${1#*=}" ;;
                 --java=*) javaVersion="${1#*=}" ;;
                 --language=*) projectLanguage="${1#*=}" ;;
@@ -1031,12 +1107,15 @@ case "$mode" in
             esac
             shift
         done
-        bootVersion=${bootVersion:-3.5.14}
+        bootVersionSpecified=${bootVersionSpecified:-false}
         projectType=${projectType:-maven}
         javaVersion=${javaVersion:-17}
         projectLanguage=${projectLanguage:-java}
         gradleDsl=${gradleDsl:-groovy}
         depsPreviewCsv=$(normalize_deps_csv "$depsPreviewCsv")
+        if [[ "$bootVersionSpecified" != "true" ]]; then
+            resolve_project_boot_version
+        fi
         validate_deps_preview_args
         print_dependencies_declaration "$depsPreviewCsv"
         ;;
@@ -1046,7 +1125,10 @@ case "$mode" in
             case "$1" in
                 --help|-h) print_help_deps_search; exit 0 ;;
                 --query=*) depsSearchQuery="${1#*=}" ;;
-                --boot=*) bootVersion="${1#*=}" ;;
+                --boot=*)
+                    bootVersion="${1#*=}"
+                    bootVersionSpecified=true
+                    ;;
                 --refresh) depsForceRefresh=true ;;
                 *)
                     log_error "deps search 模式未知参数: $1"
@@ -1056,9 +1138,32 @@ case "$mode" in
             esac
             shift
         done
-        bootVersion=${bootVersion:-3.5.14}
+        bootVersionSpecified=${bootVersionSpecified:-false}
         depsOutput=${depsOutput:-terminal}
+        if [[ "$bootVersionSpecified" != "true" ]]; then
+            resolve_project_boot_version
+        fi
         validate_deps_list_args
         deps_search_command "$depsSearchQuery"
+        ;;
+
+    boot-list)
+        for arg in "$@"; do
+            case "$arg" in
+                --help|-h)
+                    print_help_boot_list
+                    exit 0
+                    ;;
+                --refresh)
+                    depsForceRefresh=true
+                    ;;
+                *)
+                    log_error "boot list 模式未知参数: $arg"
+                    print_help_boot_list
+                    exit "$EXIT_PARAM"
+                    ;;
+            esac
+        done
+        list_boot_versions
         ;;
 esac
