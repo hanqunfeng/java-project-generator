@@ -1,0 +1,139 @@
+# -*- coding: utf-8; mode: tcl; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- vim:fenc=utf-8:ft=tcl:et:sw=4:ts=4:sts=4
+
+# PortSystem: 声明 Portfile 语法版本，目前固定为 1.0。
+PortSystem          1.0
+
+# PortGroup: 引入一组预置逻辑。github 1.0 负责从 GitHub 取源码并做版本检查。
+PortGroup           github 1.0
+
+# github.setup: 作者、仓库名、版本号、tag 前缀。这里的 v 表示 tag 是 v1.0.9。
+github.setup        hanqunfeng java-project-generator 1.0.9 v
+# github.tarball_from: 指定源码包从哪下载。archive 使用 GitHub 的 tag 归档，校验值稳定。
+github.tarball_from archive
+# revision: 同一上游版本下的 Portfile 修订号。只改安装脚本、不改版本时加 1。
+revision            0
+
+# description: 一行简介。搜索结果和 port info 会显示它。
+description         Generate Spring Boot projects quickly with shell scripts
+# long_description: 详细说明。{*}${description} 把上面的简介展开后接在这段文字前面。
+long_description    {*}${description}. Supports single-module jar/war projects \
+                    via Spring Initializr, and multi-module Maven or Gradle \
+                    projects, including adding modules to an existing build.
+
+# categories: 端口分类。第一个是主分类，必须和 Portfile 所在目录名一致。
+categories          devel java
+# platforms: 可安装的系统范围。any 表示不限制 macOS 版本。
+platforms           any
+# supported_archs: 支持的 CPU 架构。noarch 表示纯脚本，不区分 x86_64 和 arm64。
+supported_archs     noarch
+# license: 上游项目的许可证。
+license             MIT
+# maintainers: 维护者。openmaintainer 表示其他维护者也可以提交更新。
+maintainers         {@hanqunfeng github:hanqunfeng} openmaintainer
+# installs_libs: no 表示本端口不安装共享库，rev-upgrade 不必扫描它。
+installs_libs       no
+
+# checksums: 校验下载到的源码包。rmd160 与 sha256 核对内容，size 核对字节数。
+checksums           rmd160  9c39d549f3f56a2642bcd0a45626a7fce18b8d8a \
+                    sha256  d648d8ab75cc2b961c19c1cb9c281afbbfda6b21c767b2c607cfbb52ce24ca70 \
+                    size    59763
+
+# depends_run-append: 追加运行时依赖。安装本端口时会先装上，编译阶段用不到。
+depends_run-append  port:glow
+
+# use_configure: no 表示没有配置阶段，不运行 ./configure。
+use_configure       no
+# build: 空过程表示跳过编译。默认的 build 会执行 make。
+build               {}
+
+destroot {
+    # set: 给 Tcl 变量赋值。${prefix} 是安装前缀，${name} 是端口名。
+    # 这里得到的是激活后的真实路径，不含 ${destroot}。
+    set libexec ${prefix}/libexec/${name}
+
+    # xinstall -d: 创建目录，父目录不存在时一并创建。文件必须写到 ${destroot} 暂存树里。
+    xinstall -d ${destroot}${libexec}
+    # xinstall -m: 把文件拷进目标目录，并用 -m 设置权限。0755 表示所有者可读写执行。
+    # ${worksrcpath} 是解压后的源码目录。
+    xinstall -m 0755 ${worksrcpath}/springboot ${destroot}${libexec}
+
+    xinstall -d ${destroot}${libexec}/lib
+    # glob: 按通配符列出文件。{*}: 把这个列表拆成一个个独立参数再传给 xinstall。
+    xinstall -m 0755 {*}[glob ${worksrcpath}/lib/*.sh] ${destroot}${libexec}/lib
+
+    xinstall -d ${destroot}${libexec}/completions
+    # -W: 后面列出的源文件名都相对于这个目录。0644 表示所有者可读写，其他人只读。
+    xinstall -m 0644 -W ${worksrcpath}/completions springboot.bash _springboot \
+        ${destroot}${libexec}/completions
+
+    xinstall -d ${destroot}${libexec}/assets
+    xinstall -m 0644 {*}[glob ${worksrcpath}/assets/*] ${destroot}${libexec}/assets
+
+    # -d 与 -m 合用: 创建目录时直接指定权限。1777 所有用户可写，并带粘滞位。
+    # MacPorts 以 root 安装，之后运行 springboot 的用户必须能写缓存。
+    # 补全脚本按相对路径查找 deps-cache，所以缓存留在这棵 libexec 树里。
+    xinstall -d -m 1777 ${destroot}${libexec}/deps-cache
+
+    xinstall -d ${destroot}${prefix}/bin
+    # open: 打开文件并返回通道。w 表示新建或清空后写入。
+    set wrapper [open ${destroot}${prefix}/bin/springboot w]
+    # puts: 向通道写入一行。内容里的路径用 ${prefix}，这是用户激活后真正执行的位置。
+    puts ${wrapper} "#!/usr/bin/env bash"
+    puts ${wrapper} "exec \"${libexec}/springboot\" \"\$@\""
+    # close: 关闭通道，内容此时落盘。
+    close ${wrapper}
+    # file attributes -permissions: 修改已经存在的文件的权限。
+    file attributes ${destroot}${prefix}/bin/springboot -permissions 0755
+
+    # 补全入口只 source libexec 里的脚本，这样 BASH_SOURCE 仍落在 deps-cache 旁边。
+    set bash_comp_dir ${destroot}${prefix}/share/bash-completion/completions
+    xinstall -d ${bash_comp_dir}
+    set bash_comp [open ${bash_comp_dir}/springboot w]
+    puts ${bash_comp} "source \"${libexec}/completions/springboot.bash\""
+    close ${bash_comp}
+    file attributes ${bash_comp_dir}/springboot -permissions 0644
+
+    # _springboot 里的 :A 会把符号链接解析回 libexec。
+    xinstall -d ${destroot}${prefix}/share/zsh/site-functions
+    # ln -s: 创建符号链接。链接目标写安装后的路径，不要带 ${destroot}。
+    ln -s ${libexec}/completions/_springboot \
+        ${destroot}${prefix}/share/zsh/site-functions/_springboot
+}
+
+# notes: 安装完成后打印给用户的说明，不参与构建。
+notes "
+python3 is required but is not installed by this port. Install it before use:
+
+    sudo port install python313
+    sudo port select --set python3 python313
+
+Needed for: deps list cache, --deps validation, and other Initializr metadata parsing.
+
+Optional tools (not installed by this port):
+
+    sudo port install pandoc
+    sudo port install jq
+    sudo port install libxml2
+    sudo port install xmlstarlet
+    sudo port install maven3
+    sudo port select --set maven maven3
+
+pandoc is only used by \"springboot deps list --output=web\".
+xmllint, xmlstarlet, and mvn are only used when parsing a parent POM for Maven\
+ \"module add\". An awk fallback still works without them.
+
+Network access to Spring Initializr is required (default: https://start.spring.io).
+Override with: export INITIALIZR_BASE_URL=<mirror-url>
+
+Bash completion is installed for the bash-completion port. Zsh completion is\
+ installed to ${prefix}/share/zsh/site-functions.
+"
+
+# test.run: yes 表示允许执行 port test。默认不跑测试。
+test.run            yes
+# test: 自定义测试阶段，用来代替默认的 make test。
+test {
+    # system: 通过 shell 执行一条命令。-W 指定工作目录，命令失败则测试失败。
+    system -W ${worksrcpath} "set -o pipefail; ./springboot --help | grep -F 'springboot <command>'"
+    system -W ${workpath} "set -o pipefail; ${worksrcpath}/springboot create --name=porttest --dry-run | grep -F 'Dry-run 模式'"
+}
