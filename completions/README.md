@@ -110,7 +110,7 @@ springboot deps preview --deps=<TAB>
 
 ## 手动启用
 
-`$REPO_ROOT` 表示仓库根目录，约定与根 [README.md](../README.md) 中「安装与全局命令配置」一致。
+`$REPO_ROOT` 表示仓库根目录，约定与根 [README.zh-CN.md](../README.zh-CN.md) 中「安装与全局命令配置」一致。
 
 ### Bash
 

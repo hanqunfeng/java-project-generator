@@ -75,8 +75,9 @@ fi
 
 if (( CURRENT == 2 )); then
   _arguments \
-    '--help[显示帮助信息]' \
-    '--version[显示脚本版本]' \
+    '--help[Show help]' \
+    '--version[Show the script version]' \
+    '--zh[Print messages in Chinese]' \
     '1:command:(create module deps boot)'
   return
 fi
@@ -84,19 +85,19 @@ fi
 local cmd="${words[2]}"
 local create_long_opts module_add_long_opts deps_list_long_opts deps_preview_long_opts
 create_long_opts=(
-  --help --dry-run --name= --boot= --type= --packaging= --modules= --config=
+  --help --zh --dry-run --name= --boot= --type= --packaging= --modules= --config=
   --java= --language= --gradle-dsl= --group= --artifact= --artifact-version= --desc= --pkg= --deps=
 )
 module_add_long_opts=(
-  --help --dry-run --name= --module= --module-packaging= --module-path= --boot=
+  --help --zh --dry-run --name= --module= --module-packaging= --module-path= --boot=
   --type= --packaging= --config= --java= --language= --gradle-dsl= --group= --artifact= --artifact-version=
   --desc= --pkg= --deps=
 )
-module_list_long_opts=(--help --name= --type= --module-path=)
-module_remove_long_opts=(--help --dry-run --name= --type= --module= --module-path=)
-deps_list_long_opts=(--help --boot= --output= --refresh)
-deps_preview_long_opts=(--help --deps= --boot= --type= --java= --language= --gradle-dsl=)
-deps_search_long_opts=(--help --query= --boot= --refresh)
+module_list_long_opts=(--help --zh --name= --type= --module-path=)
+module_remove_long_opts=(--help --zh --dry-run --name= --type= --module= --module-path=)
+deps_list_long_opts=(--help --zh --boot= --output= --refresh)
+deps_preview_long_opts=(--help --zh --deps= --boot= --type= --java= --language= --gradle-dsl=)
+deps_search_long_opts=(--help --zh --query= --boot= --refresh)
 
 case "$cmd" in
   create)
@@ -116,23 +117,24 @@ case "$cmd" in
       return
     fi
     _arguments -s \
-      '--help[显示 create 命令帮助]' \
-      '--dry-run[仅打印执行计划]' \
-      '--name=[项目名]:name:' \
-      '--boot=[Spring Boot 版本]:boot:' \
-      '--type=[构建工具]:type:(maven gradle)' \
-      '--packaging=[打包方式]:packaging:(jar war pom)' \
-      '--modules=[子模块列表，逗号分隔]:modules:' \
-      '--config=[配置文件格式]:config:(properties yaml)' \
-      '--java=[Java 版本]:java:(17 21 25)' \
-      '--language=[代码语言]:language:(java kotlin groovy)' \
+      '--help[Show create help]' \
+      '--zh[Print messages in Chinese]' \
+      '--dry-run[Print the execution plan only]' \
+      '--name=[Project name]:name:' \
+      '--boot=[Spring Boot version]:boot:' \
+      '--type=[Build tool]:type:(maven gradle)' \
+      '--packaging=[Packaging]:packaging:(jar war pom)' \
+      '--modules=[Module list, comma-separated]:modules:' \
+      '--config=[Config file format]:config:(properties yaml)' \
+      '--java=[Java version]:java:(17 21 25)' \
+      '--language=[Language]:language:(java kotlin groovy)' \
       '--gradle-dsl=[Gradle DSL]:gradle-dsl:(groovy kotlin)' \
       '--group=[Group Id]:group:' \
       '--artifact=[Artifact Id]:artifact:' \
-      '--artifact-version=[项目版本]:artifact-version:' \
-      '--desc=[项目描述]:desc:' \
-      "--pkg=[根包名（默认同 --group，自动把 '-' 转 '_'）]:pkg:" \
-      '--deps=[依赖 ID 列表，逗号分隔]:deps:'
+      '--artifact-version=[Project version]:artifact-version:' \
+      '--desc=[Project description]:desc:' \
+      "--pkg=[Root package (defaults to --group, '-' becomes '_')]:pkg:" \
+      '--deps=[Dependency IDs, comma-separated]:deps:'
     ;;
   module)
     if (( CURRENT == 3 )); then
@@ -159,25 +161,26 @@ case "$cmd" in
           return
         fi
         _arguments -s \
-          '--help[显示 module add 命令帮助]' \
-          '--dry-run[仅打印执行计划]' \
-          '--name=[目标项目名]:name:' \
-          '--module=[新增子模块名]:module:' \
-          '--module-packaging=[子模块打包方式]:module-packaging:(jar pom)' \
-          '--module-path=[父模块路径]:module-path:' \
-          '--boot=[Spring Boot 版本]:boot:' \
-          '--type=[构建工具]:type:(maven gradle)' \
-          '--packaging=[打包方式，仅支持 pom]:packaging:(pom)' \
-          '--config=[配置文件格式]:config:(properties yaml)' \
-          '--java=[Java 版本]:java:(17 21 25)' \
-          '--language=[代码语言]:language:(java kotlin groovy)' \
+          '--help[Show module add help]' \
+          '--zh[Print messages in Chinese]' \
+          '--dry-run[Print the execution plan only]' \
+          '--name=[Target project name]:name:' \
+          '--module=[Module name to add]:module:' \
+          '--module-packaging=[Module packaging]:module-packaging:(jar pom)' \
+          '--module-path=[Parent module path]:module-path:' \
+          '--boot=[Spring Boot version]:boot:' \
+          '--type=[Build tool]:type:(maven gradle)' \
+          '--packaging=[Packaging, pom only]:packaging:(pom)' \
+          '--config=[Config file format]:config:(properties yaml)' \
+          '--java=[Java version]:java:(17 21 25)' \
+          '--language=[Language]:language:(java kotlin groovy)' \
           '--gradle-dsl=[Gradle DSL]:gradle-dsl:(groovy kotlin)' \
           '--group=[Group Id]:group:' \
           '--artifact=[Artifact Id]:artifact:' \
-          '--artifact-version=[项目版本]:artifact-version:' \
-          '--desc=[项目描述]:desc:' \
-          "--pkg=[根包名（默认同 --group，自动把 '-' 转 '_'）]:pkg:" \
-          '--deps=[依赖 ID 列表，逗号分隔]:deps:'
+          '--artifact-version=[Project version]:artifact-version:' \
+          '--desc=[Project description]:desc:' \
+          "--pkg=[Root package (defaults to --group, '-' becomes '_')]:pkg:" \
+          '--deps=[Dependency IDs, comma-separated]:deps:'
         ;;
       list)
         if [[ -z "${words[CURRENT]}" || "${words[CURRENT]}" == --* ]]; then
@@ -188,10 +191,11 @@ case "$cmd" in
           return
         fi
         _arguments -s \
-          '--help[显示 module list 命令帮助]' \
-          '--name=[目标项目名]:name:' \
-          '--type=[构建工具]:type:(maven gradle)' \
-          '--module-path=[父模块路径]:module-path:'
+          '--help[Show module list help]' \
+          '--zh[Print messages in Chinese]' \
+          '--name=[Target project name]:name:' \
+          '--type=[Build tool]:type:(maven gradle)' \
+          '--module-path=[Parent module path]:module-path:'
         ;;
       remove)
         if [[ -z "${words[CURRENT]}" || "${words[CURRENT]}" == --* ]]; then
@@ -202,12 +206,13 @@ case "$cmd" in
           return
         fi
         _arguments -s \
-          '--help[显示 module remove 命令帮助]' \
-          '--dry-run[仅打印执行计划]' \
-          '--name=[目标项目名]:name:' \
-          '--type=[构建工具]:type:(maven gradle)' \
-          '--module=[子模块名]:module:' \
-          '--module-path=[父模块路径]:module-path:'
+          '--help[Show module remove help]' \
+          '--zh[Print messages in Chinese]' \
+          '--dry-run[Print the execution plan only]' \
+          '--name=[Target project name]:name:' \
+          '--type=[Build tool]:type:(maven gradle)' \
+          '--module=[Module name]:module:' \
+          '--module-path=[Parent module path]:module-path:'
         ;;
       *)
         _arguments '2:subcommand:(add list remove)'
@@ -233,9 +238,10 @@ case "$cmd" in
           return
         fi
         _arguments -s \
-          '--help[显示 deps list 命令帮助]' \
-          '--boot=[Spring Boot 版本]:boot:' \
-          '--output=[输出方式]:output:(terminal web)'
+          '--help[Show deps list help]' \
+          '--zh[Print messages in Chinese]' \
+          '--boot=[Spring Boot version]:boot:' \
+          '--output=[Output]:output:(terminal web)'
         ;;
       preview)
         case "${words[CURRENT]}" in
@@ -252,12 +258,13 @@ case "$cmd" in
           return
         fi
         _arguments -s \
-          '--help[显示 deps preview 命令帮助]' \
-          '--deps=[依赖 ID 列表，逗号分隔]:deps:' \
-          '--boot=[Spring Boot 版本]:boot:' \
-          '--type=[构建工具]:type:(maven gradle)' \
-          '--java=[Java 版本]:java:(17 21 25)' \
-          '--language=[代码语言]:language:(java kotlin groovy)' \
+          '--help[Show deps preview help]' \
+          '--zh[Print messages in Chinese]' \
+          '--deps=[Dependency IDs, comma-separated]:deps:' \
+          '--boot=[Spring Boot version]:boot:' \
+          '--type=[Build tool]:type:(maven gradle)' \
+          '--java=[Java version]:java:(17 21 25)' \
+          '--language=[Language]:language:(java kotlin groovy)' \
           '--gradle-dsl=[Gradle DSL]:gradle-dsl:(groovy kotlin)'
         ;;
       search)
@@ -269,10 +276,11 @@ case "$cmd" in
           return
         fi
         _arguments -s \
-          '--help[显示 deps search 命令帮助]' \
-          '--query=[关键词]:query:' \
-          '--boot=[Spring Boot 版本]:boot:' \
-          '--refresh[强制刷新缓存]'
+          '--help[Show deps search help]' \
+          '--zh[Print messages in Chinese]' \
+          '--query=[Keyword]:query:' \
+          '--boot=[Spring Boot version]:boot:' \
+          '--refresh[Force a cache refresh]'
         ;;
       *)
         _arguments '2:subcommand:(list preview search)'
@@ -288,8 +296,9 @@ case "$cmd" in
     case "$boot_sub" in
       list)
         _arguments -s \
-          '--help[显示 boot list 命令帮助]' \
-          '--refresh[强制刷新 Boot 版本缓存]'
+          '--help[Show boot list help]' \
+          '--zh[Print messages in Chinese]' \
+          '--refresh[Force a Boot version cache refresh]'
         ;;
       *)
         _arguments '2:subcommand:(list)'
@@ -298,8 +307,9 @@ case "$cmd" in
     ;;
   *)
     _arguments \
-      '--help[显示帮助信息]' \
-      '--version[显示脚本版本]' \
+      '--help[Show help]' \
+      '--zh[Print messages in Chinese]' \
+      '--version[Show the script version]' \
       '1:command:(create module deps boot)'
     ;;
 esac

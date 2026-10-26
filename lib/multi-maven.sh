@@ -245,7 +245,7 @@ load_parent_coordinates() {
     local parserVersion="none"
 
     if [ -z "$parentPom" ] || [ ! -f "$parentPom" ]; then
-        echo "父项目 pom.xml 不存在: ${parentPom}"
+        say "Parent project pom.xml does not exist: ${parentPom}" "父项目 pom.xml 不存在: ${parentPom}"
         exit "$exit_fs"
     fi
 
@@ -260,10 +260,10 @@ load_parent_coordinates() {
     parserVersion="$LAST_COORDINATE_PARSER"
 
     if [ -z "$detectedGroupId" ] || [ -z "$detectedArtifactId" ] || [ -z "$detectedVersion" ]; then
-        echo "无法从父 pom.xml 解析 groupId/artifactId/version: ${parentPom}"
-        echo "解析详情: groupId='${detectedGroupId:-<空>}'(${parserGroupId}), artifactId='${detectedArtifactId:-<空>}'(${parserArtifactId}), version='${detectedVersion:-<空>}'(${parserVersion})"
-        echo "已按顺序尝试: mvn(help:evaluate) -> xmllint(xpath) -> xmlstarlet(xpath) -> awk(fallback)"
-        echo "排查建议: 1) 确认 pom.xml 格式合法 2) 安装 mvn 或 xmllint 3) 手工检查 groupId/artifactId/version 是否存在"
+        say "Cannot parse groupId/artifactId/version from parent pom.xml: ${parentPom}" "无法从父 pom.xml 解析 groupId/artifactId/version: ${parentPom}"
+        say "Details: groupId='${detectedGroupId:-<empty>}'(${parserGroupId}), artifactId='${detectedArtifactId:-<empty>}'(${parserArtifactId}), version='${detectedVersion:-<empty>}'(${parserVersion})" "解析详情: groupId='${detectedGroupId:-<空>}'(${parserGroupId}), artifactId='${detectedArtifactId:-<空>}'(${parserArtifactId}), version='${detectedVersion:-<空>}'(${parserVersion})"
+        say "Tried in order: mvn(help:evaluate) -> xmllint(xpath) -> xmlstarlet(xpath) -> awk(fallback)" "已按顺序尝试: mvn(help:evaluate) -> xmllint(xpath) -> xmlstarlet(xpath) -> awk(fallback)"
+        say "Hints: 1) confirm pom.xml is valid 2) install mvn or xmllint 3) check that groupId/artifactId/version exist" "排查建议: 1) 确认 pom.xml 格式合法 2) 安装 mvn 或 xmllint 3) 手工检查 groupId/artifactId/version 是否存在"
         exit "$exit_param"
     fi
 
@@ -272,10 +272,10 @@ load_parent_coordinates() {
     artifactId="$detectedArtifactId"
     parentVersion="$detectedVersion"
 
-    echo "父 POM 解析成功:"
-    echo "  - groupId:    ${groupId}    [来源: ${parserGroupId}]"
-    echo "  - artifactId: ${artifactId} [来源: ${parserArtifactId}]"
-    echo "  - version:    ${parentVersion} [来源: ${parserVersion}]"
+    say "Parent POM parsed:" "父 POM 解析成功:"
+    say "  - groupId:    ${groupId}    [source: ${parserGroupId}]" "  - groupId:    ${groupId}    [来源: ${parserGroupId}]"
+    say "  - artifactId: ${artifactId} [source: ${parserArtifactId}]" "  - artifactId: ${artifactId} [来源: ${parserArtifactId}]"
+    say "  - version:    ${parentVersion} [source: ${parserVersion}]" "  - version:    ${parentVersion} [来源: ${parserVersion}]"
 }
 
 # -----------------------------------------------------------------------------
@@ -290,8 +290,8 @@ resolve_target_parent_pom() {
     resolve_parent_dir_common
     targetParentPom="${targetParentDir}/pom.xml"
 
-    ensure_dir_exists_common "$targetParentDir" "父模块目录不存在"
-    ensure_file_exists_common "$targetParentPom" "父模块 pom.xml 不存在"
+    ensure_dir_exists_common "$targetParentDir" "$(t "Parent module directory does not exist" "父模块目录不存在")"
+    ensure_file_exists_common "$targetParentPom" "$(t "Parent module pom.xml does not exist" "父模块 pom.xml 不存在")"
 
     extract_project_coordinate "packaging" "$targetParentPom"
     targetParentPackaging="$EXTRACTED_COORDINATE"
@@ -304,9 +304,9 @@ resolve_target_parent_pom() {
     fi
 
     if [ "$targetParentPackaging" != "pom" ]; then
-        echo "父模块打包类型不支持追加子模块: ${targetParentPom}"
-        echo "  - 当前 packaging: ${targetParentPackaging} [来源: ${targetParentPackagingParser}]"
-        echo "  - 仅支持 packaging=pom 的聚合模块追加子模块"
+        say "Parent module packaging does not allow adding a module: ${targetParentPom}" "父模块打包类型不支持追加子模块: ${targetParentPom}"
+        say "  - current packaging: ${targetParentPackaging} [source: ${targetParentPackagingParser}]" "  - 当前 packaging: ${targetParentPackaging} [来源: ${targetParentPackagingParser}]"
+        say "  - only aggregator modules with packaging=pom can receive child modules" "  - 仅支持 packaging=pom 的聚合模块追加子模块"
         exit "$exit_param"
     fi
 }
@@ -351,7 +351,7 @@ resolve_maven_dependencies_block() {
         if declare -f extract_dependencies_declaration_block >/dev/null 2>&1; then
             MAVEN_DEPS_CACHE_VALUE="$(extract_dependencies_declaration_block "$depsCsv" "maven")" || exit "$exit_dep"
         else
-            echo "当前执行上下文缺少依赖声明提取函数，无法根据 --deps 生成 Maven 依赖块"
+            say "Dependency declaration extractor is missing in this context, so a Maven dependency block cannot be built from --deps" "当前执行上下文缺少依赖声明提取函数，无法根据 --deps 生成 Maven 依赖块"
             exit "$exit_dep"
         fi
         MAVEN_DEPS_CACHE_KEY="$depsCsv"
@@ -373,12 +373,12 @@ print_maven_module_plan() {
 
     if [[ "$modulePkg" == "jar" ]]; then
         print_jar_module_scaffold_plan_common "${modDir}" "${packageName}" "${mod}" "${configFormat}"
-        plan_echo "WRITE" "写入子模块依赖: '${modDir}/pom.xml' <- --deps=${depsCsv}"
+        plan_echo "WRITE" "$(t "Write module dependencies: '${modDir}/pom.xml' <- --deps=${depsCsv}" "写入子模块依赖: '${modDir}/pom.xml' <- --deps=${depsCsv}")"
     else
-        plan_echo "WRITE" "创建聚合模块目录: '${modDir}' (packaging=pom, 不生成 src 与依赖)"
-        plan_echo "FLOW" "module-packaging=pom 时忽略 --deps=${depsCsv}"
+        plan_echo "WRITE" "$(t "Create aggregator module directory: '${modDir}' (packaging=pom, no src or dependencies)" "创建聚合模块目录: '${modDir}' (packaging=pom, 不生成 src 与依赖)")"
+        plan_echo "FLOW" "$(t "Ignoring --deps=${depsCsv} when module-packaging=pom" "module-packaging=pom 时忽略 --deps=${depsCsv}")"
     fi
-    plan_echo "WRITE" "生成子模块 POM: '${modDir}/pom.xml' (packaging=${modulePkg}, parent=${parentInfo}, artifactId=${mod})"
+    plan_echo "WRITE" "$(t "Generate module POM: '${modDir}/pom.xml' (packaging=${modulePkg}, parent=${parentInfo}, artifactId=${mod})" "生成子模块 POM: '${modDir}/pom.xml' (packaging=${modulePkg}, parent=${parentInfo}, artifactId=${mod})")"
 }
 
 # -----------------------------------------------------------------------------
@@ -394,36 +394,36 @@ print_maven_plan() {
         fi
         local targetParentPomForPlan="${targetParentDirForPlan}/pom.xml"
         local modDir="${targetParentDirForPlan}/${mod}"
-        plan_echo "CHECK" "解析父模块路径: '${modulePath:-<项目根>}' -> '${targetParentDirForPlan}'"
-        plan_echo "CHECK" "检查父模块 pom.xml 存在: '${targetParentPomForPlan}'"
-        plan_echo "CHECK" "检查父模块 packaging 必须为 pom: '${targetParentPomForPlan}'"
-        plan_echo "CHECK" "检查子模块目录不存在: '${modDir}'"
-        plan_echo "CHECK" "读取父项目坐标: '${targetParentPomForPlan}' -> groupId/artifactId/version"
-        plan_echo "CHECK" "校验父项目坐标解析成功，否则终止"
-        print_maven_module_plan "$mod" "$modDir" "${modulePackaging}" "<从 ${targetParentPomForPlan} 解析的 groupId:artifactId:version>" "${dependencies}"
-        plan_echo "WRITE" "更新父 POM: '${targetParentPomForPlan}'，在 <modules> 中追加 '<module>${mod}</module>'"
-        plan_echo "CHECK" "若父 POM 已存在模块 '${mod}'，则终止并提示冲突（相对路径挂载）"
-        plan_echo "FLOW" "输出完成提示: Maven 子模块追加完成: ${mod}"
+        plan_echo "CHECK" "$(t "Resolve parent module path: '${modulePath:-<project root>}' -> '${targetParentDirForPlan}'" "解析父模块路径: '${modulePath:-<项目根>}' -> '${targetParentDirForPlan}'")"
+        plan_echo "CHECK" "$(t "Check parent module pom.xml exists: '${targetParentPomForPlan}'" "检查父模块 pom.xml 存在: '${targetParentPomForPlan}'")"
+        plan_echo "CHECK" "$(t "Check parent module packaging is pom: '${targetParentPomForPlan}'" "检查父模块 packaging 必须为 pom: '${targetParentPomForPlan}'")"
+        plan_echo "CHECK" "$(t "Check module directory does not exist: '${modDir}'" "检查子模块目录不存在: '${modDir}'")"
+        plan_echo "CHECK" "$(t "Read parent coordinates: '${targetParentPomForPlan}' -> groupId/artifactId/version" "读取父项目坐标: '${targetParentPomForPlan}' -> groupId/artifactId/version")"
+        plan_echo "CHECK" "$(t "Stop unless parent coordinates are parsed successfully" "校验父项目坐标解析成功，否则终止")"
+        print_maven_module_plan "$mod" "$modDir" "${modulePackaging}" "$(t "<groupId:artifactId:version parsed from ${targetParentPomForPlan}>" "<从 ${targetParentPomForPlan} 解析的 groupId:artifactId:version>")" "${dependencies}"
+        plan_echo "WRITE" "$(t "Update parent POM: '${targetParentPomForPlan}', append '<module>${mod}</module>' inside <modules>" "更新父 POM: '${targetParentPomForPlan}'，在 <modules> 中追加 '<module>${mod}</module>'")"
+        plan_echo "CHECK" "$(t "If parent POM already contains module '${mod}', stop and report a conflict (relative path mount)" "若父 POM 已存在模块 '${mod}'，则终止并提示冲突（相对路径挂载）")"
+        plan_echo "FLOW" "$(t "Print completion message: Maven module added: ${mod}" "输出完成提示: Maven 子模块追加完成: ${mod}")"
     else
         # 子模块 parent.version 统一引用 ${revision}，与父 POM 的 CI-friendly 版本对齐
         # 故意用单引号写入字面量 ${revision}，禁止 shell 展开
         # shellcheck disable=SC2016
         parentVersion='${revision}'
-        plan_echo "WRITE" "创建父项目目录: '${projectName}'"
-        plan_echo "WRITE" "生成项目忽略文件: '${projectName}/.gitignore'"
+        plan_echo "WRITE" "$(t "Create parent project directory: '${projectName}'" "创建父项目目录: '${projectName}'")"
+        plan_echo "WRITE" "$(t "Write project ignore file: '${projectName}/.gitignore'" "生成项目忽略文件: '${projectName}/.gitignore'")"
         if [ -n "$subModules" ]; then
-            plan_echo "FLOW" "根据 modules 参数构建父 POM 的 <modules> 列表: '${subModules}'"
+            plan_echo "FLOW" "$(t "Build the parent POM <modules> list from the modules argument: '${subModules}'" "根据 modules 参数构建父 POM 的 <modules> 列表: '${subModules}'")"
         else
-            plan_echo "FLOW" "未提供 modules 参数，父 POM 将不包含 <modules> 列表"
+            plan_echo "FLOW" "$(t "No modules argument; the parent POM will not include a <modules> list" "未提供 modules 参数，父 POM 将不包含 <modules> 列表")"
         fi
-        plan_echo "WRITE" "生成父 POM 文件: '${projectName}/pom.xml' (packaging=pom, bootVersion=${bootVersion}, javaVersion=${javaVersion}, revision=${projectVersion})"
+        plan_echo "WRITE" "$(t "Generate parent POM file: '${projectName}/pom.xml' (packaging=pom, bootVersion=${bootVersion}, javaVersion=${javaVersion}, revision=${projectVersion})" "生成父 POM 文件: '${projectName}/pom.xml' (packaging=pom, bootVersion=${bootVersion}, javaVersion=${javaVersion}, revision=${projectVersion})")"
         if [ -n "$subModules" ]; then
             while IFS= read -r mod; do
                 [ -z "$mod" ] && continue
                 print_maven_module_plan "$mod" "${projectName}/${mod}" "jar" "${groupId}:${artifactId}:${parentVersion}" "${dependencies}"
             done < <(iterate_csv_items_common "$subModules")
         fi
-        plan_echo "FLOW" "输出完成提示: Maven 多模块项目创建完成"
+        plan_echo "FLOW" "$(t "Print completion message: Maven multi-module project created" "输出完成提示: Maven 多模块项目创建完成")"
     fi
 }
 
@@ -507,9 +507,9 @@ EOF
 EOF
     fi
     if [[ "$modulePkg" == "jar" ]]; then
-        echo "  已创建子模块: ${mod} (packaging=${modulePkg}, deps=${depsCsv})"
+        say "  Created module: ${mod} (packaging=${modulePkg}, deps=${depsCsv})" "  已创建子模块: ${mod} (packaging=${modulePkg}, deps=${depsCsv})"
     else
-        echo "  已创建子模块: ${mod} (packaging=${modulePkg}, deps=ignored)"
+        say "  Created module: ${mod} (packaging=${modulePkg}, deps=ignored)" "  已创建子模块: ${mod} (packaging=${modulePkg}, deps=ignored)"
     fi
 }
 
@@ -530,13 +530,13 @@ append_module_to_parent_pom() {
     local tmpFile
 
     if [ ! -f "$parentPom" ]; then
-        echo "父项目 pom.xml 不存在: ${parentPom}"
+        say "Parent project pom.xml does not exist: ${parentPom}" "父项目 pom.xml 不存在: ${parentPom}"
         exit "$exit_fs"
     fi
 
     parentContent=$(<"$parentPom")
     if [[ "$parentContent" == *"<module>${moduleEntry}</module>"* ]]; then
-        echo "子模块已存在于父 pom.xml: ${moduleEntry}"
+        say "Module already exists in parent pom.xml: ${moduleEntry}" "子模块已存在于父 pom.xml: ${moduleEntry}"
         exit "$exit_param"
     fi
 
@@ -590,7 +590,7 @@ if [[ "$action" == "add-module" ]]; then
     load_parent_coordinates "${targetParentPom}"
     create_maven_module "$mod" "$modDir" "${modulePackaging}" "${dependencies}"
     append_module_to_parent_pom "${targetParentPom}" "$mod"
-    echo "Maven 子模块追加完成: ${mod} (父模块路径: ${modulePath:-<项目根>}, packaging=${modulePackaging})"
+    say "Maven module added: ${mod} (parent path: ${modulePath:-<project root>}, packaging=${modulePackaging})" "Maven 子模块追加完成: ${mod} (父模块路径: ${modulePath:-<项目根>}, packaging=${modulePackaging})"
 else
     # 子模块 parent.version 统一引用 ${revision}
     # 故意用单引号写入字面量 ${revision}，禁止 shell 展开
@@ -646,7 +646,7 @@ else
 ${modulesXml}
     <dependencyManagement>
         <dependencies>
-            <!-- Spring Boot 依赖 BOM（不是 starter-parent） -->
+            <!-- $(t "Spring Boot dependency BOM (not starter-parent)" "Spring Boot 依赖 BOM（不是 starter-parent）") -->
             <dependency>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-dependencies</artifactId>
@@ -655,7 +655,7 @@ ${modulesXml}
                 <scope>import</scope>
             </dependency>
 
-            <!-- Spring Cloud 依赖 BOM（按需取消注释）
+            <!-- $(t "Spring Cloud dependency BOM (uncomment if needed)" "Spring Cloud 依赖 BOM（按需取消注释）")
             <dependency>
                 <groupId>org.springframework.cloud</groupId>
                 <artifactId>spring-cloud-dependencies</artifactId>
@@ -665,7 +665,7 @@ ${modulesXml}
             </dependency>
             -->
 
-            <!-- Spring Cloud Alibaba 依赖 BOM（按需取消注释）
+            <!-- $(t "Spring Cloud Alibaba dependency BOM (uncomment if needed)" "Spring Cloud Alibaba 依赖 BOM（按需取消注释）")
             <dependency>
                 <groupId>com.alibaba.cloud</groupId>
                 <artifactId>spring-cloud-alibaba-dependencies</artifactId>
@@ -715,5 +715,5 @@ EOF
             create_maven_module "$mod" "${projectName}/${mod}" "jar" "${dependencies}"
         done < <(iterate_csv_items_common "$subModules")
     fi
-    echo "Maven 多模块项目创建完成"
+    say "Maven multi-module project created" "Maven 多模块项目创建完成"
 fi

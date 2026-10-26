@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # ========= 项目级文件公共逻辑 =========
 
+if ! declare -F t >/dev/null 2>&1; then
+    # shellcheck source=lib/i18n.sh
+    source "${SCRIPT_DIR}/lib/i18n.sh"
+fi
+
 # -----------------------------------------------------------------------------
 # 函数: write_project_gitignore
 # 作用: 在指定项目目录写入默认 .gitignore（覆盖写入）。
@@ -13,7 +18,7 @@
 write_project_gitignore() {
     local projectDir="$1"
     if [ -z "$projectDir" ]; then
-        echo "write_project_gitignore 需要 projectDir 参数"
+        say "write_project_gitignore requires a projectDir argument" "write_project_gitignore 需要 projectDir 参数"
         return 1
     fi
 

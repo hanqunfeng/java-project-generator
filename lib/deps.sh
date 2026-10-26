@@ -14,6 +14,11 @@
 #   bootVersion, projectType, projectLanguage, gradleDsl, javaVersion
 #   depsOutput, depsPreviewCsv, depsForceRefresh
 
+if ! declare -F t >/dev/null 2>&1; then
+    # shellcheck source=lib/i18n.sh
+    source "${SCRIPT_DIR}/lib/i18n.sh"
+fi
+
 DEFAULT_DEPS="web,devtools"
 INITIALIZR_BASE_URL="${INITIALIZR_BASE_URL:-https://start.spring.io}"
 INITIALIZR_BASE_URL="${INITIALIZR_BASE_URL%/}"
@@ -238,7 +243,7 @@ ensure_dependency_catalog_cache() {
     if [ ! -e "$cacheFile" ] && [ -s "$legacyCacheFile" ]; then
         mkdir -p "$cacheDir" >/dev/null 2>&1
         mv "$legacyCacheFile" "$cacheFile"
-        echo "已迁移旧缓存到 Markdown 文件: ${cacheFile}"
+        say "Migrated legacy cache to Markdown: ${cacheFile}" "已迁移旧缓存到 Markdown 文件: ${cacheFile}"
     fi
 
     if [[ "$depsForceRefresh" != "true" && -s "$cacheFile" ]]; then
@@ -247,7 +252,7 @@ ensure_dependency_catalog_cache() {
             DEP_CACHE_FILE="$cacheFile"
             return 0
         fi
-        echo "检测到旧版或过期缓存，正在刷新: ${cacheFile}"
+        say "Legacy or expired cache detected, refreshing: ${cacheFile}" "检测到旧版或过期缓存，正在刷新: ${cacheFile}"
     fi
 
     tmpFile=$(mktemp)
@@ -255,13 +260,17 @@ ensure_dependency_catalog_cache() {
     register_tmp_file "$tmpFile"
     register_tmp_file "$tmpOutput"
     if ! curl --fail --show-error --location --retry 3 --retry-delay 1 --no-progress-meter "$metadataUrl" -o "$tmpFile"; then
-        echo "依赖列表获取失败: 请检查网络或 Boot 版本 (${bootVersion}) 是否可用"
+        say "Failed to fetch the dependency list. Check the network or whether Boot version (${bootVersion}) is available" "依赖列表获取失败: 请检查网络或 Boot 版本 (${bootVersion}) 是否可用"
         exit "$EXIT_NETWORK"
     fi
 
     if command -v python3 >/dev/null 2>&1 && python3 - "$tmpFile" > "$tmpOutput" <<'PY'
 import json
+import os
 import sys
+
+def tr(en, zh):
+    return zh if os.environ.get("OUTPUT_LANG") == "zh" else en
 
 def esc(text: str) -> str:
     return (text or "").replace("|", "\\|").replace("\n", " ").strip()
@@ -271,7 +280,10 @@ with open(sys.argv[1], "r", encoding="utf-8") as f:
 
 groups = data.get("dependencies", {}).get("values", [])
 if not groups:
-    print("未获取到依赖数据，请检查 Spring Initializr 返回内容")
+    print(tr(
+        "No dependency data found. Check the Spring Initializr response.",
+        "未获取到依赖数据，请检查 Spring Initializr 返回内容",
+    ))
     sys.exit(1)
 
 print("| Group | ID | Name | Description |")
@@ -300,23 +312,23 @@ PY
     }; then
         :
     else
-        echo "依赖列表解析失败: 需要可用的 python3 或 jq 以解析 Initializr 元数据"
+        say "Failed to parse the dependency list. python3 or jq is required to parse Initializr metadata" "依赖列表解析失败: 需要可用的 python3 或 jq 以解析 Initializr 元数据"
         exit "$EXIT_DEP"
     fi
 
     if ! mkdir -p "$cacheDir"; then
-        echo "缓存目录创建失败: ${cacheDir}"
+        say "Failed to create cache directory: ${cacheDir}" "缓存目录创建失败: ${cacheDir}"
         exit "$EXIT_FS"
     fi
 
     if ! mv "$tmpOutput" "$cacheFile"; then
-        echo "依赖缓存写入失败: ${cacheFile}"
+        say "Failed to write dependency cache: ${cacheFile}" "依赖缓存写入失败: ${cacheFile}"
         exit "$EXIT_FS"
     fi
 
     # tmpOutput 已成功 move，避免在退出时重复清理该路径。
     tmp_files=("${tmp_files[@]/$tmpOutput}")
-    echo "已缓存依赖列表: ${cacheFile}"
+    say "Cached dependency list: ${cacheFile}" "已缓存依赖列表: ${cacheFile}"
     DEP_CACHE_FILE="$cacheFile"
 }
 
@@ -328,9 +340,9 @@ PY
 # -----------------------------------------------------------------------------
 print_dependency_catalog() {
     ensure_dependency_catalog_cache
-    echo "使用本地缓存: ${DEP_CACHE_FILE}"
+    say "Using local cache: ${DEP_CACHE_FILE}" "使用本地缓存: ${DEP_CACHE_FILE}"
     if ! command -v glow >/dev/null 2>&1; then
-        echo "未检测到 glow 命令，请先安装 glow 后再查看缓存文件: ${DEP_CACHE_FILE}"
+        say "glow was not found. Install glow, then view the cache file: ${DEP_CACHE_FILE}" "未检测到 glow 命令，请先安装 glow 后再查看缓存文件: ${DEP_CACHE_FILE}"
         exit "$EXIT_DEP"
     fi
     glow "$DEP_CACHE_FILE" -w 150 </dev/null
@@ -355,12 +367,12 @@ extract_dependencies_declaration_block() {
     local bootParamKey
 
     if [ -z "$depsCsv" ]; then
-        log_error "依赖列表不能为空，请传入至少一个依赖ID（如 --deps=web）"
+        log_error "$(t "The dependency list cannot be empty. Pass at least one dependency ID (for example --deps=web)" "依赖列表不能为空，请传入至少一个依赖ID（如 --deps=web）")"
         exit "$EXIT_PARAM"
     fi
 
     if [[ "$targetType" != "maven" && "$targetType" != "gradle" ]]; then
-        log_error "构建工具不合法: 仅支持 maven 或 gradle"
+        log_error "$(t "Invalid build tool: only maven or gradle is allowed" "构建工具不合法: 仅支持 maven 或 gradle")"
         exit "$EXIT_PARAM"
     fi
 
@@ -379,12 +391,16 @@ extract_dependencies_declaration_block() {
     tmpFile=$(mktemp)
     register_tmp_file "$tmpFile"
     if ! curl --fail --show-error --location --retry 3 --retry-delay 1 --no-progress-meter "$descriptorUrl" -o "$tmpFile"; then
-        log_error "依赖声明获取失败: 请检查网络、Boot 版本 (${bootVersion}) 或依赖ID是否可用"
+        log_error "$(t "Failed to fetch dependency declarations. Check the network, Boot version (${bootVersion}), or whether the dependency IDs are available" "依赖声明获取失败: 请检查网络、Boot 版本 (${bootVersion}) 或依赖ID是否可用")"
         exit "$EXIT_NETWORK"
     fi
 
     if ! python3 - "$tmpFile" "$targetType" <<'PY'
+import os
 import sys
+
+def tr(en, zh):
+    return zh if os.environ.get("OUTPUT_LANG") == "zh" else en
 
 path = sys.argv[1]
 project_type = sys.argv[2]
@@ -395,18 +411,27 @@ with open(path, "r", encoding="utf-8") as f:
 if project_type == "maven":
     start = next((i for i, line in enumerate(lines) if "<dependencies>" in line), -1)
     if start < 0:
-        print("未在 pom.xml 中找到 <dependencies> 节点")
+        print(tr(
+            "No <dependencies> element found in pom.xml",
+            "未在 pom.xml 中找到 <dependencies> 节点",
+        ))
         sys.exit(1)
     end = next((i for i in range(start + 1, len(lines)) if "</dependencies>" in lines[i]), -1)
     if end < 0:
-        print("未在 pom.xml 中找到 </dependencies> 节点")
+        print(tr(
+            "No </dependencies> element found in pom.xml",
+            "未在 pom.xml 中找到 </dependencies> 节点",
+        ))
         sys.exit(1)
     print("\n".join(lines[start + 1:end]).rstrip())
     sys.exit(0)
 
 start = next((i for i, line in enumerate(lines) if line.strip().startswith("dependencies {")), -1)
 if start < 0:
-    print("未在 build.gradle 中找到 dependencies { 块")
+    print(tr(
+        "No dependencies { block found in build.gradle",
+        "未在 build.gradle 中找到 dependencies { 块",
+    ))
     sys.exit(1)
 
 depth = lines[start].count("{") - lines[start].count("}")
@@ -419,16 +444,16 @@ for line in lines[start + 1:]:
     inner.append(line)
 
 if not inner:
-    print("未提取到依赖声明内容")
+    print(tr("No dependency declarations were extracted", "未提取到依赖声明内容"))
     sys.exit(1)
 
 print("\n".join(inner).rstrip())
 PY
     then
         if [[ "$targetType" == "maven" ]]; then
-            log_error "pom.xml 解析失败: 未能提取 dependencies 内容"
+            log_error "$(t "Failed to parse pom.xml: could not extract dependencies" "pom.xml 解析失败: 未能提取 dependencies 内容")"
         else
-            log_error "build.gradle 解析失败: 未能提取 dependencies 内容"
+            log_error "$(t "Failed to parse build.gradle: could not extract dependencies" "build.gradle 解析失败: 未能提取 dependencies 内容")"
         fi
         exit "$EXIT_DEP"
     fi
@@ -443,7 +468,7 @@ PY
 print_dependencies_declaration() {
     local depsCsv="$1"
     if [[ "$projectType" != "maven" && "$projectType" != "gradle" ]]; then
-        log_error "构建工具不合法: 仅支持 --type=maven 或 --type=gradle"
+        log_error "$(t "Invalid build tool: only --type=maven or --type=gradle is allowed" "构建工具不合法: 仅支持 --type=maven 或 --type=gradle")"
         exit "$EXIT_PARAM"
     fi
     extract_dependencies_declaration_block "$depsCsv" "$projectType"
@@ -466,30 +491,30 @@ open_dependency_catalog_web() {
     ensure_dependency_catalog_cache
 
     if ! command -v pandoc >/dev/null 2>&1; then
-        log_error "未检测到 pandoc，请先安装后再执行 'springboot deps list --output=web'"
+        log_error "$(t "pandoc was not found. Install it, then run 'springboot deps list --output=web'" "未检测到 pandoc，请先安装后再执行 'springboot deps list --output=web'")"
         exit "$EXIT_DEP"
     fi
 
     if [ ! -f "${cssPath}" ]; then
-        log_error "未找到样式文件: ${cssPath}"
-        log_warn "请确认 assets/web_style.css 存在"
+        log_error "$(t "Stylesheet not found: ${cssPath}" "未找到样式文件: ${cssPath}")"
+        log_warn "$(t "Confirm that assets/web_style.css exists" "请确认 assets/web_style.css 存在")"
         exit "$EXIT_FS"
     fi
 
     (
         cd "$cacheDir" || exit "$EXIT_FS"
-        pandoc "$cacheMarkdown" --standalone --metadata title="SpringBoot ${bootVersion} 官方依赖列表" -o "$htmlFile" --css="$cssArg" && open_browser "$htmlFile"
+        pandoc "$cacheMarkdown" --standalone --metadata title="$(t "SpringBoot ${bootVersion} official dependencies" "SpringBoot ${bootVersion} 官方依赖列表")" -o "$htmlFile" --css="$cssArg" && open_browser "$htmlFile"
     ) || {
-        log_error "依赖网页渲染或打开失败，请检查 pandoc 或系统浏览器打开命令是否可用"
+        log_error "$(t "Failed to render or open the dependency page. Check pandoc or the system browser command" "依赖网页渲染或打开失败，请检查 pandoc 或系统浏览器打开命令是否可用")"
         exit "$EXIT_DEP"
     }
 
-    log_success "已使用浏览器打开: ${cacheDir}/${htmlFile}"
+    log_success "$(t "Opened in the browser: ${cacheDir}/${htmlFile}" "已使用浏览器打开: ${cacheDir}/${htmlFile}")"
     if ! command -v glow >/dev/null 2>&1; then
-        log_warn "未检测到 glow 命令，请先安装 glow 后再查看缓存文件: ${DEP_CACHE_FILE}"
+        log_warn "$(t "glow was not found. Install glow, then view the cache file: ${DEP_CACHE_FILE}" "未检测到 glow 命令，请先安装 glow 后再查看缓存文件: ${DEP_CACHE_FILE}")"
         return 0
     fi
-    log_info "如需在终端查看 Markdown 表格: glow ${DEP_CACHE_FILE} -w 150"
+    log_info "$(t "To view the Markdown table in the terminal: glow ${DEP_CACHE_FILE} -w 150" "如需在终端查看 Markdown 表格: glow ${DEP_CACHE_FILE} -w 150")"
 }
 
 # -----------------------------------------------------------------------------
@@ -510,14 +535,18 @@ validate_dependencies_against_initializr() {
     tmpFile=$(mktemp)
     register_tmp_file "$tmpFile"
     if ! curl --fail --show-error --location --retry 3 --retry-delay 1 --no-progress-meter "$metadataUrl" -o "$tmpFile"; then
-        echo "依赖元数据获取失败: 请检查网络或 Boot 版本 (${bootVersion}) 是否可用"
+        say "Failed to fetch dependency metadata. Check the network or whether Boot version (${bootVersion}) is available" "依赖元数据获取失败: 请检查网络或 Boot 版本 (${bootVersion}) 是否可用"
         exit "$EXIT_NETWORK"
     fi
 
     if command -v python3 >/dev/null 2>&1 && python3 - "$tmpFile" "$requestedCsv" <<'PY'
 import difflib
 import json
+import os
 import sys
+
+def tr(en, zh):
+    return zh if os.environ.get("OUTPUT_LANG") == "zh" else en
 
 metadata_path = sys.argv[1]
 requested = [x for x in sys.argv[2].split(",") if x]
@@ -536,14 +565,21 @@ unknown = [x for x in requested if x not in available]
 if not unknown:
     sys.exit(0)
 
-print(f"存在无效依赖ID: {', '.join(unknown)}")
+print(tr(
+    f"Invalid dependency IDs: {', '.join(unknown)}",
+    f"存在无效依赖ID: {', '.join(unknown)}",
+))
 all_ids = sorted(available.keys())
 for bad in unknown:
     guesses = difflib.get_close_matches(bad, all_ids, n=3, cutoff=0.45)
     if guesses:
-        print(f"  - {bad}，你可能想要: {', '.join(guesses)}")
+        joined = ", ".join(guesses)
+        print(tr(f"  - {bad}: did you mean: {joined}", f"  - {bad}，你可能想要: {joined}"))
 
-print("可先执行 'springboot deps list --boot=<版本>' 查看当前 Boot 版本支持的依赖ID。")
+print(tr(
+    "Run 'springboot deps list --boot=<version>' to see dependency IDs supported by the current Boot version.",
+    "可先执行 'springboot deps list --boot=<版本>' 查看当前 Boot 版本支持的依赖ID。",
+))
 sys.exit(1)
 PY
     then
@@ -561,21 +597,21 @@ PY
         done < <(printf '%s\n' "$requestedCsv" | tr ',' '\n')
         if [ -n "$unknownIds" ]; then
             unknownIds="${unknownIds%,}"
-            echo "存在无效依赖ID: ${unknownIds}"
-            echo "可先执行 'springboot deps list --boot=<版本>' 查看当前 Boot 版本支持的依赖ID。"
+            say "Invalid dependency IDs: ${unknownIds}" "存在无效依赖ID: ${unknownIds}"
+            say "Run 'springboot deps list --boot=<version>' to see dependency IDs supported by the current Boot version." "可先执行 'springboot deps list --boot=<版本>' 查看当前 Boot 版本支持的依赖ID。"
             exit "$EXIT_PARAM"
         fi
         return 0
     else
-        echo "依赖校验失败: 需要可用的 python3 或 jq 解析 Initializr 元数据"
+        say "Dependency validation failed. python3 or jq is required to parse Initializr metadata" "依赖校验失败: 需要可用的 python3 或 jq 解析 Initializr 元数据"
         exit "$EXIT_DEP"
     fi
 }
 
 deps_search_command() {
     local query="$1"
+    [ -n "$query" ] || { say "Missing --query argument" "缺少 --query 参数"; exit "$EXIT_PARAM"; }
     ensure_dependency_catalog_cache
-    [ -n "$query" ] || { echo "缺少 --query 参数"; exit "$EXIT_PARAM"; }
     awk -F'|' -v keyword="$query" '
         BEGIN { kw=tolower(keyword) }
         /^\|/ {
@@ -595,7 +631,7 @@ validate_dependencies_format() {
     while IFS= read -r dep; do
         [ -z "$dep" ] && continue
         if [[ ! "$dep" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
-            echo "依赖ID不合法: '$dep'，仅允许小写字母、数字、短横线，且首字符必须是字母或数字"
+            say "Invalid dependency ID: '$dep'. Only lowercase letters, digits, and hyphens are allowed, and the first character must be a letter or digit" "依赖ID不合法: '$dep'，仅允许小写字母、数字、短横线，且首字符必须是字母或数字"
             exit "$EXIT_PARAM"
         fi
     done < <(echo "$csv" | tr ',' '\n')
@@ -605,7 +641,7 @@ validate_boot_version_format() {
     local version="$1"
     # 兼容 x.y.z、x.y.z-SNAPSHOT、x.y.z.RELEASE、x.y.z.BUILD-SNAPSHOT 等 Initializr ID
     if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.]+)?$ ]]; then
-        log_error "Boot版本不合法: 仅支持 x.y.z 或带后缀标识，例如 4.0.7、4.0.7.RELEASE、4.1.1.BUILD-SNAPSHOT"
+        log_error "$(t "Invalid Boot version: only x.y.z or a suffixed id is allowed, for example 4.0.7, 4.0.7.RELEASE, 4.1.1.BUILD-SNAPSHOT" "Boot版本不合法: 仅支持 x.y.z 或带后缀标识，例如 4.0.7、4.0.7.RELEASE、4.1.1.BUILD-SNAPSHOT")"
         exit "$EXIT_PARAM"
     fi
 }
@@ -613,7 +649,7 @@ validate_boot_version_format() {
 validate_deps_list_args() {
     validate_boot_version_format "$bootVersion"
     if [[ "$depsOutput" != "terminal" && "$depsOutput" != "web" ]]; then
-        echo "--output 不合法: 仅支持 terminal 或 web"
+        say "Invalid --output: only terminal or web is allowed" "--output 不合法: 仅支持 terminal 或 web"
         exit "$EXIT_PARAM"
     fi
 }
@@ -656,18 +692,22 @@ ensure_boot_version_catalog() {
     register_tmp_file "$tmpOutput"
 
     if ! curl --fail --show-error --location --retry 3 --retry-delay 1 --no-progress-meter "$metadataUrl" -o "$tmpFile"; then
-        log_error "Boot 版本列表获取失败: 请检查网络或 Initializr 服务是否可用 (${INITIALIZR_BASE_URL})"
+        log_error "$(t "Failed to fetch the Boot version list. Check the network or whether the Initializr service is available (${INITIALIZR_BASE_URL})" "Boot 版本列表获取失败: 请检查网络或 Initializr 服务是否可用 (${INITIALIZR_BASE_URL})")"
         exit "$EXIT_NETWORK"
     fi
 
     if ! command -v python3 >/dev/null 2>&1; then
-        log_error "Boot 版本列表解析失败: 需要可用的 python3"
+        log_error "$(t "Failed to parse the Boot version list: python3 is required" "Boot 版本列表解析失败: 需要可用的 python3")"
         exit "$EXIT_DEP"
     fi
 
     python3 - "$tmpFile" "$INITIALIZR_BASE_URL" > "$tmpOutput" <<'PY'
 import json
+import os
 import sys
+
+def tr(en, zh):
+    return zh if os.environ.get("OUTPUT_LANG") == "zh" else en
 
 metadata_path = sys.argv[1]
 base_url = sys.argv[2]
@@ -677,8 +717,12 @@ try:
         data = json.load(f)
 except Exception:
     print(
-        "Boot 版本列表解析失败: Initializr 返回的不是有效 JSON，"
-        f"请检查 INITIALIZR_BASE_URL ({base_url}) 是否指向可用服务。",
+        tr(
+            "Failed to parse the Boot version list: Initializr did not return valid JSON. "
+            f"Check that INITIALIZR_BASE_URL ({base_url}) points to a working service.",
+            "Boot 版本列表解析失败: Initializr 返回的不是有效 JSON，"
+            f"请检查 INITIALIZR_BASE_URL ({base_url}) 是否指向可用服务。",
+        ),
         file=sys.stderr,
     )
     sys.exit(2)
@@ -712,7 +756,10 @@ walk(raw_values)
 
 if not versions:
     print(
-        "未获取到 Boot 版本数据，请检查 Initializr 返回内容或镜像站点是否兼容。",
+        tr(
+            "No Boot version data found. Check the Initializr response or whether the mirror is compatible.",
+            "未获取到 Boot 版本数据，请检查 Initializr 返回内容或镜像站点是否兼容。",
+        ),
         file=sys.stderr,
     )
     sys.exit(1)
@@ -864,7 +911,7 @@ resolve_project_boot_version() {
     ensure_boot_version_catalog
     defaultBoot="$(initializr_default_boot_version)"
     if [ -z "$defaultBoot" ]; then
-        log_error "未能从 Initializr 获取默认 Boot 版本"
+        log_error "$(t "Could not read the default Boot version from Initializr" "未能从 Initializr 获取默认 Boot 版本")"
         exit "$EXIT_DEP"
     fi
 
@@ -880,12 +927,12 @@ resolve_project_boot_version() {
     fi
 
     availablePreview=$(awk -F'\t' '$1 != "DEFAULT" { print $1 }' "${BOOT_VERSION_CATALOG_FILE}" | head -n 8 | tr '\n' ',' | sed 's/,$//')
-    log_error "Boot 版本 '${bootVersion}' 已不被当前 Initializr 支持（官方已不再提供该版本创建）。"
-    echo "当前默认版本: ${defaultBoot}"
+    log_error "$(t "Boot version '${bootVersion}' is no longer supported by the current Initializr (it can no longer be used to create projects)." "Boot 版本 '${bootVersion}' 已不被当前 Initializr 支持（官方已不再提供该版本创建）。")"
+    say "Current default version: ${defaultBoot}" "当前默认版本: ${defaultBoot}"
     if [ -n "$availablePreview" ]; then
-        echo "可用版本示例: ${availablePreview}"
+        say "Example available versions: ${availablePreview}" "可用版本示例: ${availablePreview}"
     fi
-    echo "请执行 'springboot boot list' 查看完整列表，或省略 --boot 以使用默认版本。"
+    say "Run 'springboot boot list' for the full list, or omit --boot to use the default version." "请执行 'springboot boot list' 查看完整列表，或省略 --boot 以使用默认版本。"
     exit "$EXIT_PARAM"
 }
 
@@ -901,7 +948,11 @@ list_boot_versions() {
     default_id=$(awk -F'\t' '$1 == "DEFAULT" { print $2; exit }' "$cacheFile")
 
     python3 - "$cacheFile" "$INITIALIZR_BASE_URL" "$default_id" <<'PY'
+import os
 import sys
+
+def tr(en, zh):
+    return zh if os.environ.get("OUTPUT_LANG") == "zh" else en
 
 cache_path = sys.argv[1]
 base_url = sys.argv[2]
@@ -919,47 +970,59 @@ with open(cache_path, "r", encoding="utf-8") as f:
         versions.append({"id": left, "name": right})
 
 if not versions:
-    print("未获取到 Boot 版本数据。", file=sys.stderr)
+    print(tr("No Boot version data found.", "未获取到 Boot 版本数据。"), file=sys.stderr)
     sys.exit(1)
 
 id_width = max(len("ID"), max(len(v["id"]) for v in versions))
 name_width = max(len("Name"), max(len(v["name"]) for v in versions))
 
 print(f"Initializr: {base_url}")
-print(f"默认版本:   {default_id or '(未提供)'}")
+print(tr(
+    f"Default version:   {default_id or '(not provided)'}",
+    f"默认版本:   {default_id or '(未提供)'}",
+))
 print("")
-print("可用版本（可用于 springboot create --boot=<版本>）:")
+print(tr(
+    "Available versions (for springboot create --boot=<version>):",
+    "可用版本（可用于 springboot create --boot=<版本>）:",
+))
 print(f"  {'':1}{'ID'.ljust(id_width)}  {'Name'.ljust(name_width)}")
 print(f"  {'':1}{'-' * id_width}  {'-' * name_width}")
 for item in versions:
     mark = "*" if item["id"] == default_id else " "
     print(f"  {mark}{item['id'].ljust(id_width)}  {item['name'].ljust(name_width)}")
 print("")
-print("说明: 标记 * 为当前 Initializr 默认版本；create 时可传 ID（如 4.0.7.RELEASE）或其简写（如 4.0.7）。")
-print("提示: 若列表异常，可执行 springboot boot list --refresh 强制刷新缓存。")
+print(tr(
+    "Note: * marks the current Initializr default. create accepts an ID (for example 4.0.7.RELEASE) or its short form (for example 4.0.7).",
+    "说明: 标记 * 为当前 Initializr 默认版本；create 时可传 ID（如 4.0.7.RELEASE）或其简写（如 4.0.7）。",
+))
+print(tr(
+    "Tip: if the list looks wrong, run springboot boot list --refresh to refresh the cache.",
+    "提示: 若列表异常，可执行 springboot boot list --refresh 强制刷新缓存。",
+))
 PY
 }
 
 validate_deps_preview_args() {
     validate_boot_version_format "$bootVersion"
     if [[ "$projectType" != "maven" && "$projectType" != "gradle" ]]; then
-        echo "构建工具不合法: 仅支持 maven 或 gradle"
+        say "Invalid build tool: only maven or gradle is allowed" "构建工具不合法: 仅支持 maven 或 gradle"
         exit "$EXIT_PARAM"
     fi
     if [[ "$javaVersion" != "17" && "$javaVersion" != "21" && "$javaVersion" != "25" ]]; then
-        echo "Java版本不合法: 仅支持 17、21 或 25"
+        say "Invalid Java version: only 17, 21, or 25 is allowed" "Java版本不合法: 仅支持 17、21 或 25"
         exit "$EXIT_PARAM"
     fi
     if [[ "$projectLanguage" != "java" && "$projectLanguage" != "kotlin" && "$projectLanguage" != "groovy" ]]; then
-        echo "language 不合法: 仅支持 java、kotlin 或 groovy"
+        say "Invalid language: only java, kotlin, or groovy is allowed" "language 不合法: 仅支持 java、kotlin 或 groovy"
         exit "$EXIT_PARAM"
     fi
     if [[ "$gradleDsl" != "groovy" && "$gradleDsl" != "kotlin" ]]; then
-        echo "gradle-dsl 不合法: 仅支持 groovy 或 kotlin"
+        say "Invalid gradle-dsl: only groovy or kotlin is allowed" "gradle-dsl 不合法: 仅支持 groovy 或 kotlin"
         exit "$EXIT_PARAM"
     fi
     if [ -z "$depsPreviewCsv" ]; then
-        log_error "deps preview 模式必须提供 --deps=<依赖ID列表>"
+        log_error "$(t "deps preview requires --deps=<dependency id list>" "deps preview 模式必须提供 --deps=<依赖ID列表>")"
         exit "$EXIT_PARAM"
     fi
     validate_dependencies_format "$depsPreviewCsv"

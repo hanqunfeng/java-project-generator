@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+
+if ! declare -F t >/dev/null 2>&1; then
+    # shellcheck source=lib/i18n.sh
+    source "${SCRIPT_DIR}/lib/i18n.sh"
+fi
 # ========= 模块模板公共逻辑 =========
 
 # -----------------------------------------------------------------------------
@@ -64,7 +69,7 @@ write_module_application_files() {
     local sourceLanguage="${projectLanguage:-java}"
 
     if [ -z "$packageNameArg" ]; then
-        echo "write_module_application_files 需要 packageName 参数"
+        say "write_module_application_files requires a packageName argument" "write_module_application_files 需要 packageName 参数"
         return 1
     fi
 
@@ -224,13 +229,13 @@ print_jar_module_scaffold_plan_common() {
 
     packageSubpath="$(build_package_subpath_common "${packageNameArg}" "${mod}")"
     local sourceLanguage="${projectLanguage:-java}"
-    plan_echo "WRITE" "创建子模块目录结构: '${modDir}/src/main/${sourceLanguage}/${packageSubpath}'"
-    plan_echo "WRITE" "创建子模块目录结构: '${modDir}/src/main/resources'"
-    plan_echo "WRITE" "创建子模块目录结构: '${modDir}/src/test/${sourceLanguage}/${packageSubpath}'"
-    plan_echo "WRITE" "生成 Spring Boot 启动类与测试类: '${modDir}/src/main/${sourceLanguage}/.../*Application.*' 和 '${modDir}/src/test/${sourceLanguage}/.../*ApplicationTests.*'"
+    plan_echo "WRITE" "$(t "Create module directories: '${modDir}/src/main/${sourceLanguage}/${packageSubpath}'" "创建子模块目录结构: '${modDir}/src/main/${sourceLanguage}/${packageSubpath}'")"
+    plan_echo "WRITE" "$(t "Create module directories: '${modDir}/src/main/resources'" "创建子模块目录结构: '${modDir}/src/main/resources'")"
+    plan_echo "WRITE" "$(t "Create module directories: '${modDir}/src/test/${sourceLanguage}/${packageSubpath}'" "创建子模块目录结构: '${modDir}/src/test/${sourceLanguage}/${packageSubpath}'")"
+    plan_echo "WRITE" "$(t "Generate the Spring Boot application and test classes: '${modDir}/src/main/${sourceLanguage}/.../*Application.*' and '${modDir}/src/test/${sourceLanguage}/.../*ApplicationTests.*'" "生成 Spring Boot 启动类与测试类: '${modDir}/src/main/${sourceLanguage}/.../*Application.*' 和 '${modDir}/src/test/${sourceLanguage}/.../*ApplicationTests.*'")"
     if [[ "$configFormatArg" == "yaml" ]]; then
-        plan_echo "WRITE" "创建配置文件: '${modDir}/src/main/resources/application.yaml' (if configFormat=yaml)"
+        plan_echo "WRITE" "$(t "Create config file: '${modDir}/src/main/resources/application.yaml' (if configFormat=yaml)" "创建配置文件: '${modDir}/src/main/resources/application.yaml' (if configFormat=yaml)")"
     else
-        plan_echo "WRITE" "创建配置文件: '${modDir}/src/main/resources/application.properties' (if configFormat=properties)"
+        plan_echo "WRITE" "$(t "Create config file: '${modDir}/src/main/resources/application.properties' (if configFormat=properties)" "创建配置文件: '${modDir}/src/main/resources/application.properties' (if configFormat=properties)")"
     fi
 }

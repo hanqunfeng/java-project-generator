@@ -4,6 +4,10 @@
 #   projectName, modulePath
 
 source "${SCRIPT_DIR}/lib/arg-common.sh"
+if ! declare -F t >/dev/null 2>&1; then
+    # shellcheck source=lib/i18n.sh
+    source "${SCRIPT_DIR}/lib/i18n.sh"
+fi
 
 # 统一退出码（来源入口脚本，缺失时使用默认值）。
 exit_param="${EXIT_PARAM:-1}"
@@ -91,7 +95,7 @@ ensure_file_exists_common() {
 ensure_module_dir_absent_common() {
     local moduleDir="$1"
     if [ -d "$moduleDir" ]; then
-        exit_with_message_common "子模块目录已存在: ${moduleDir}" "$exit_param"
+        exit_with_message_common "$(t "Module directory already exists: ${moduleDir}" "子模块目录已存在: ${moduleDir}")" "$exit_param"
     fi
 }
 

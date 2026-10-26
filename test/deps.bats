@@ -65,7 +65,7 @@ load_deps_harness() {
     validate_dependencies_format "Bad-ID"
   ' bash "$PROJECT_ROOT"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"依赖ID不合法"* ]]
+  [[ "$output" == *"Invalid dependency ID"* ]]
 }
 
 @test "is_cache_file_expired 对刚创建文件未过期" {
@@ -107,7 +107,7 @@ EOF
   rm -f "$DEPS_CACHE_DIR/boot-versions.tsv"
   PATH="$fake_bin:$PATH" run list_boot_versions
   [ "$status" -eq 0 ]
-  [[ "$output" == *"默认版本:   4.0.7.RELEASE"* ]]
+  [[ "$output" == *"Default version:   4.0.7.RELEASE"* ]]
   [[ "$output" == *"*4.0.7.RELEASE"* ]]
   [[ "$output" == *"4.1.0.RELEASE"* ]]
   rm -rf "$fake_bin"
@@ -131,7 +131,7 @@ EOF
   rm -f "$DEPS_CACHE_DIR/boot-versions.tsv"
   PATH="$fake_bin:$PATH" run list_boot_versions
   [ "$status" -eq 2 ]
-  [[ "$output" == *"不是有效 JSON"* ]]
+  [[ "$output" == *"valid JSON"* ]]
   rm -rf "$fake_bin"
 }
 
@@ -191,5 +191,5 @@ EOF
     resolve_project_boot_version
   ' bash "$PROJECT_ROOT" "$DEPS_CACHE_DIR"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"已不被当前 Initializr 支持"* ]]
+  [[ "$output" == *"no longer supported by the current Initializr"* ]]
 }

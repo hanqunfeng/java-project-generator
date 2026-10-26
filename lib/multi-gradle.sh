@@ -63,8 +63,8 @@ resolve_gradle_target_parent() {
         gradle_dsl="kotlin"
     fi
 
-    ensure_dir_exists_common "$targetParentDir" "父模块目录不存在"
-    ensure_file_exists_common "$rootSettingsFile" "settings.gradle 不存在"
+    ensure_dir_exists_common "$targetParentDir" "$(t "Parent module directory does not exist" "父模块目录不存在")"
+    ensure_file_exists_common "$rootSettingsFile" "$(t "settings.gradle does not exist" "settings.gradle 不存在")"
 }
 
 # -----------------------------------------------------------------------------
@@ -98,7 +98,7 @@ resolve_gradle_dependencies_block() {
         if declare -f extract_dependencies_declaration_block >/dev/null 2>&1; then
             GRADLE_DEPS_CACHE_VALUE="$(extract_dependencies_declaration_block "$depsCsv" "gradle")" || exit "$exit_dep"
         else
-            echo "当前执行上下文缺少依赖声明提取函数，无法根据 --deps 生成 Gradle 依赖块"
+            say "Dependency declaration extractor is missing in this context, so a Gradle dependency block cannot be built from --deps" "当前执行上下文缺少依赖声明提取函数，无法根据 --deps 生成 Gradle 依赖块"
             exit "$exit_dep"
         fi
         GRADLE_DEPS_CACHE_KEY="$depsCsv"
@@ -120,14 +120,14 @@ print_gradle_module_plan() {
 
     if [[ "$modulePkg" == "jar" ]]; then
         print_jar_module_scaffold_plan_common "${modDir}" "${packageName}" "${mod}" "${configFormat}"
-        plan_echo "WRITE" "写入子模块依赖: '${modDir}/${module_build_file}' <- --deps=${depsCsv}"
-        plan_echo "WRITE" "生成子模块构建文件: '${modDir}/${module_build_file}' (packaging=jar, bootVersion=${bootVersion}, javaVersion=${javaVersion}, dependencyManagementVersion=${gradle_dm_plugin_version})"
+        plan_echo "WRITE" "$(t "Write module dependencies: '${modDir}/${module_build_file}' <- --deps=${depsCsv}" "写入子模块依赖: '${modDir}/${module_build_file}' <- --deps=${depsCsv}")"
+        plan_echo "WRITE" "$(t "Generate module build file: '${modDir}/${module_build_file}' (packaging=jar, bootVersion=${bootVersion}, javaVersion=${javaVersion}, dependencyManagementVersion=${gradle_dm_plugin_version})" "生成子模块构建文件: '${modDir}/${module_build_file}' (packaging=jar, bootVersion=${bootVersion}, javaVersion=${javaVersion}, dependencyManagementVersion=${gradle_dm_plugin_version})")"
     else
-        plan_echo "WRITE" "创建聚合模块目录: '${modDir}' (packaging=pom 映射为聚合模块，不生成 src 与依赖)"
-        plan_echo "FLOW" "module-packaging=pom 时忽略 --deps=${depsCsv}"
-        plan_echo "WRITE" "生成聚合模块构建文件: '${modDir}/${module_build_file}' (不应用 java/spring-boot 插件)"
+        plan_echo "WRITE" "$(t "Create aggregator module directory: '${modDir}' (packaging=pom mapped to an aggregator module, no src or dependencies)" "创建聚合模块目录: '${modDir}' (packaging=pom 映射为聚合模块，不生成 src 与依赖)")"
+        plan_echo "FLOW" "$(t "Ignoring --deps=${depsCsv} when module-packaging=pom" "module-packaging=pom 时忽略 --deps=${depsCsv}")"
+        plan_echo "WRITE" "$(t "Generate aggregator build file: '${modDir}/${module_build_file}' (no java/spring-boot plugins)" "生成聚合模块构建文件: '${modDir}/${module_build_file}' (不应用 java/spring-boot 插件)")"
     fi
-    plan_echo "WRITE" "更新根 ${root_settings_file}: '${projectName}/${root_settings_file}'，追加 include '${includePath}'"
+    plan_echo "WRITE" "$(t "Update root ${root_settings_file}: '${projectName}/${root_settings_file}', append include '${includePath}'" "更新根 ${root_settings_file}: '${projectName}/${root_settings_file}'，追加 include '${includePath}'")"
 }
 
 # -----------------------------------------------------------------------------
@@ -144,29 +144,29 @@ print_gradle_plan() {
         local modDir="${parentDirForPlan}/${mod}"
         local includePath
         includePath=$(build_gradle_include_path_common "$modulePath" "$mod")
-        plan_echo "CHECK" "解析父模块路径: '${modulePath:-<项目根>}' -> '${parentDirForPlan}'"
-        plan_echo "CHECK" "检查根 ${root_settings_file} 存在: '${projectName}/${root_settings_file}'"
-        plan_echo "CHECK" "检查子模块目录不存在: '${modDir}'"
+        plan_echo "CHECK" "$(t "Resolve parent module path: '${modulePath:-<project root>}' -> '${parentDirForPlan}'" "解析父模块路径: '${modulePath:-<项目根>}' -> '${parentDirForPlan}'")"
+        plan_echo "CHECK" "$(t "Check root ${root_settings_file} exists: '${projectName}/${root_settings_file}'" "检查根 ${root_settings_file} 存在: '${projectName}/${root_settings_file}'")"
+        plan_echo "CHECK" "$(t "Check module directory does not exist: '${modDir}'" "检查子模块目录不存在: '${modDir}'")"
         print_gradle_module_plan "$mod" "$modDir" "${modulePackaging}" "$includePath" "${dependencies}"
-        plan_echo "CHECK" "若 settings.gradle 中已包含 '${includePath}'，则终止并提示冲突"
-        plan_echo "FLOW" "输出完成提示: Gradle 子模块追加完成: ${mod}"
+        plan_echo "CHECK" "$(t "If settings.gradle already contains '${includePath}', stop and report a conflict" "若 settings.gradle 中已包含 '${includePath}'，则终止并提示冲突")"
+        plan_echo "FLOW" "$(t "Print completion message: Gradle module added: ${mod}" "输出完成提示: Gradle 子模块追加完成: ${mod}")"
     else
-        plan_echo "WRITE" "创建父项目目录: '${projectName}'"
-        plan_echo "WRITE" "生成项目忽略文件: '${projectName}/.gitignore'"
+        plan_echo "WRITE" "$(t "Create parent project directory: '${projectName}'" "创建父项目目录: '${projectName}'")"
+        plan_echo "WRITE" "$(t "Write project ignore file: '${projectName}/.gitignore'" "生成项目忽略文件: '${projectName}/.gitignore'")"
         if [ -n "$subModules" ]; then
-            plan_echo "FLOW" "根据 modules 参数构建 settings.gradle include 列表: '${subModules}'"
+            plan_echo "FLOW" "$(t "Build the settings.gradle include list from the modules argument: '${subModules}'" "根据 modules 参数构建 settings.gradle include 列表: '${subModules}'")"
         else
-            plan_echo "FLOW" "未提供 modules 参数，${root_settings_file} 仅包含 rootProject.name"
+            plan_echo "FLOW" "$(t "No modules argument; ${root_settings_file} contains only rootProject.name" "未提供 modules 参数，${root_settings_file} 仅包含 rootProject.name")"
         fi
-        plan_echo "WRITE" "生成 ${root_settings_file}: '${projectName}/${root_settings_file}'"
-        plan_echo "WRITE" "生成根 ${root_build_file}: '${projectName}/${root_build_file}' (group=${groupId}, version=${projectVersion})"
+        plan_echo "WRITE" "$(t "Generate ${root_settings_file}: '${projectName}/${root_settings_file}'" "生成 ${root_settings_file}: '${projectName}/${root_settings_file}'")"
+        plan_echo "WRITE" "$(t "Generate root ${root_build_file}: '${projectName}/${root_build_file}' (group=${groupId}, version=${projectVersion})" "生成根 ${root_build_file}: '${projectName}/${root_build_file}' (group=${groupId}, version=${projectVersion})")"
         if [ -n "$subModules" ]; then
             while IFS= read -r mod; do
                 [ -z "$mod" ] && continue
                 print_gradle_module_plan "$mod" "${projectName}/${mod}" "jar" ":${mod}" "${dependencies}"
             done < <(iterate_csv_items_common "$subModules")
         fi
-        plan_echo "FLOW" "输出完成提示: Gradle 多模块项目创建完成"
+        plan_echo "FLOW" "$(t "Print completion message: Gradle multi-module project created" "输出完成提示: Gradle 多模块项目创建完成")"
     fi
 }
 
@@ -248,9 +248,9 @@ EOF
     fi
 
     if [[ "$modulePkg" == "jar" ]]; then
-        echo "  已创建子模块: ${mod} (packaging=${modulePkg}, deps=${depsCsv})"
+        say "  Created module: ${mod} (packaging=${modulePkg}, deps=${depsCsv})" "  已创建子模块: ${mod} (packaging=${modulePkg}, deps=${depsCsv})"
     else
-        echo "  已创建子模块: ${mod} (packaging=${modulePkg}, deps=ignored)"
+        say "  Created module: ${mod} (packaging=${modulePkg}, deps=ignored)" "  已创建子模块: ${mod} (packaging=${modulePkg}, deps=ignored)"
     fi
 }
 
@@ -270,13 +270,13 @@ ensure_settings_include_absent() {
     fi
 
     if [ ! -f "$settingsFile" ]; then
-        echo "settings.gradle 不存在: ${settingsFile}"
+        say "settings.gradle does not exist: ${settingsFile}" "settings.gradle 不存在: ${settingsFile}"
         exit "$exit_fs"
     fi
 
     settingsContent=$(<"$settingsFile")
     if [[ "$settingsContent" == *"$includeLine"* ]]; then
-        echo "子模块已存在于 settings.gradle: ${includePath}"
+        say "Module already exists in settings.gradle: ${includePath}" "子模块已存在于 settings.gradle: ${includePath}"
         exit "$exit_param"
     fi
 }
@@ -298,7 +298,7 @@ append_module_to_settings_gradle() {
     fi
 
     if [ ! -f "$settingsFile" ]; then
-        echo "settings.gradle 不存在: ${settingsFile}"
+        say "settings.gradle does not exist: ${settingsFile}" "settings.gradle 不存在: ${settingsFile}"
         exit "$exit_fs"
     fi
 
@@ -320,7 +320,7 @@ if [[ "$action" == "add-module" ]]; then
     ensure_settings_include_absent "$includePath"
     create_gradle_module "$mod" "$modDir" "${modulePackaging}" "${dependencies}"
     append_module_to_settings_gradle "$includePath"
-    echo "Gradle 子模块追加完成: ${mod} (父模块路径: ${modulePath:-<项目根>}, packaging=${modulePackaging})"
+    say "Gradle module added: ${mod} (parent path: ${modulePath:-<project root>}, packaging=${modulePackaging})" "Gradle 子模块追加完成: ${mod} (父模块路径: ${modulePath:-<项目根>}, packaging=${modulePackaging})"
 else
     escapedProjectName="$(escape_gradle_single_quoted "$projectName")"
     escapedGroupId="$(escape_gradle_single_quoted "$groupId")"
@@ -387,5 +387,5 @@ EOF
             create_gradle_module "$mod" "${projectName}/${mod}" "jar" "${dependencies}"
         done < <(iterate_csv_items_common "$subModules")
     fi
-    echo "Gradle 多模块项目创建完成"
+    say "Gradle multi-module project created" "Gradle 多模块项目创建完成"
 fi
