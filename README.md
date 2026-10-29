@@ -2,6 +2,7 @@
 
 [中文](README.zh-CN.md)
 
+
 A script for quickly generating Spring Boot projects. It supports:
 
 - Single-module projects (`jar` / `war`, fetched from Spring Initializr)
