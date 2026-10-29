@@ -127,6 +127,7 @@ bash scripts/release-formula.sh --version 1.2.0
 9. 提交并推送 Tap 仓库
 ```
 
+
 说明：正确的 `sha256` 只能在 tag 推上 GitHub 之后得到，因此 formula 的最终更新会落在 **tag 之后的一次 commit**。Homebrew 实际读取的是 **Tap 仓库**里的 formula，主仓库 `formula/` 作为同步源与示例即可。
 
 ### 2.4 中途失败怎么续跑
